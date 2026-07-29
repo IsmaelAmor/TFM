@@ -10,7 +10,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from ib_async import IB   
 
-
 load_dotenv()
 
 IB_HOST = os.getenv("IB_HOST", "127.0.0.1")
