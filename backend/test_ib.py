@@ -4,7 +4,7 @@ Ejecutar desde backend/ con el venv activado:  python test_ib.py
 """
 import os
 from dotenv import load_dotenv
-from ib_insync import IB
+from ib_async import IB  
 
 load_dotenv()
 
