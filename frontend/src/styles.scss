@@ -1,1 +1,112 @@
-/* You can add global styles to this file, and also import other style files */
+/**
+ * Sistema visual.
+ *
+ * Regla que gobierna todo el diseno: EL COLOR ES DINERO. La interfaz es
+ * acromatica —blanco, tinta y grises calidos— y el unico color que
+ * aparece en pantalla es el de las cifras de resultado y lo que se deriva
+ * de ellas. Ni la cabecera, ni los botones, ni los enlaces compiten por
+ * atencion con los numeros. Asi, localizar lo que gana y lo que pierde no
+ * requiere leer: se ve.
+ *
+ * Los grises son calidos (base piedra) y no azulados. Sobre blanco puro
+ * dan una sensacion de papel caro en vez de la de panel de administracion.
+ */
+
+:root {
+  /* Superficies */
+  --blanco: #ffffff;
+  --nube: #fafaf9;
+  --realce: #f5f5f4;
+
+  /* Tinta */
+  --tinta: #0c0a09;
+  --tinta-2: #57534e;
+  --tinta-3: #a8a29e;
+  --linea: #e7e5e4;
+
+  /* Los dos unicos colores del sistema */
+  --sube: #0b7a55;
+  --baja: #c22e22;
+
+  /* Tipografia */
+  --font-ui: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-num: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Ritmo */
+  --barra-alta: 3.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--blanco);
+  color: var(--tinta);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/**
+ * Toda cifra de la aplicacion usa esta clase. Monoespaciada y tabular
+ * para que las columnas de importes se alineen digito a digito: es lo que
+ * permite comparar magnitudes de un vistazo sin leerlas una a una.
+ */
+.cifra {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'zero' 1;
+}
+
+/** Etiqueta de campo: pequena, versalita, muy espaciada. */
+.rotulo {
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--tinta-3);
+}
+
+.sube {
+  color: var(--sube);
+}
+
+.baja {
+  color: var(--baja);
+}
+
+:focus-visible {
+  outline: 2px solid var(--tinta);
+  outline-offset: 3px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

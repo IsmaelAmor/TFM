@@ -1,0 +1,156 @@
+<section class="cartera">
+
+  @if (error(); as msg) {
+    <p class="aviso" role="alert">{{ msg }}</p>
+  }
+
+  @if (cargando()) {
+    <p class="esperando">Pidiendo datos a Interactive Brokers…</p>
+  } @else if (cartera(); as p) {
+
+    <!-- Portada. Siempre en divisa base: es la única en que sumar tiene sentido. -->
+    <div class="portada">
+      <p class="rotulo">Valor de la cartera</p>
+      <p class="magnitud cifra">
+        @if (divisaBase(); as d) {
+          {{ p.total_market_value | currency: d : 'symbol-narrow' : '1.2-2' }}
+        } @else {
+          {{ p.total_market_value | number: '1.2-2' }}
+        }
+      </p>
+      <p
+        class="variacion cifra"
+        [class.sube]="p.total_unrealized_pnl > 0"
+        [class.baja]="p.total_unrealized_pnl < 0"
+      >
+        <span class="signo">{{ p.total_unrealized_pnl > 0 ? '▲' : p.total_unrealized_pnl < 0 ? '▼' : '·' }}</span>
+        {{ p.total_unrealized_pnl | number: '1.2-2' }}
+        <span class="pct">{{ rentabilidad() | number: '1.2-2' }} %</span>
+        <span class="glosa">latente</span>
+      </p>
+
+      @if (hayConversion() && divisaPrecios(); as dp) {
+        <p class="nota">
+          Las posiciones cotizan en {{ dp }} y están convertidas a
+          {{ divisaBase() }} al tipo que publica Interactive Brokers.
+        </p>
+      }
+    </div>
+
+    <!-- Cinta de asignación -->
+    @if (p.positions.length > 0) {
+      <figure class="cinta-bloque">
+        <figcaption class="rotulo">Reparto de la cartera</figcaption>
+        <div class="cinta">
+          @for (pos of p.positions; track pos.symbol) {
+            <div
+              class="tramo"
+              [class.gana]="pos.unrealized_pnl > 0"
+              [class.pierde]="pos.unrealized_pnl < 0"
+              [style.flex-grow]="peso(pos)"
+              [title]="pos.symbol + ' · ' + (peso(pos) | number: '1.1-1') + ' %'"
+            >
+              <span class="tramo-valor">{{ pos.symbol }}</span>
+              <span class="tramo-peso cifra">{{ peso(pos) | number: '1.0-0' }}%</span>
+            </div>
+          }
+        </div>
+      </figure>
+    }
+
+    <!-- Cuenta -->
+    @if (cuenta(); as c) {
+      <section class="bloque">
+        <h2 class="rotulo titulo">Cuenta {{ c.account_id }}</h2>
+        <!--
+          Solo dos magnitudes. La API devuelve también fondos disponibles y
+          poder de compra, propios de una cuenta de margen, pero la
+          aplicación no ofrece operativa apalancada: mostrarlos enseñaría
+          una capacidad que no existe aquí. La validación de órdenes se
+          hará contra el efectivo.
+        -->
+        <dl class="cifras">
+          <div>
+            <dt class="rotulo">Valor liquidativo</dt>
+            <dd class="cifra">{{ c.net_liquidation | currency: c.currency : 'symbol-narrow' : '1.2-2' }}</dd>
+            <p class="pie">Patrimonio total de la cuenta: efectivo más posiciones.</p>
+          </div>
+          <div>
+            <dt class="rotulo">Efectivo</dt>
+            <dd class="cifra">{{ c.total_cash | currency: c.currency : 'symbol-narrow' : '1.2-2' }}</dd>
+            <p class="pie">Dinero líquido disponible para comprar.</p>
+          </div>
+        </dl>
+      </section>
+    }
+
+    <!-- Posiciones -->
+    <section class="bloque">
+      <header class="bloque-cabecera">
+        <h2 class="rotulo titulo">Posiciones abiertas</h2>
+        <div class="controles">
+          @if (actualizado(); as fecha) {
+            <span class="sello cifra">{{ fecha | date: 'HH:mm:ss' }}</span>
+          }
+          <button type="button" class="recargar" (click)="cargar()">Actualizar</button>
+        </div>
+      </header>
+
+      @if (p.positions.length === 0) {
+        <p class="esperando">
+          No hay posiciones abiertas en {{ p.account_id }}. Compra desde el Gateway
+          y aparecerán aquí en el siguiente refresco.
+        </p>
+      } @else {
+        <table class="posiciones">
+          <caption class="sr-only">Posiciones abiertas de la cuenta {{ p.account_id }}</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="izq">Valor</th>
+              <th scope="col" class="izq">Mercado</th>
+              <th scope="col">Títulos</th>
+              <th scope="col">Coste medio<span class="unidad">{{ divisaPrecios() }}</span></th>
+              <th scope="col">Último<span class="unidad">{{ divisaPrecios() }}</span></th>
+              @if (hayConversion()) {
+                <th scope="col">Cambio</th>
+              }
+              <th scope="col">Valor de mercado<span class="unidad">{{ divisaBase() }}</span></th>
+              <th scope="col">Peso<span class="unidad">%</span></th>
+              <th scope="col">Resultado latente<span class="unidad">{{ divisaBase() }}</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (pos of p.positions; track pos.symbol) {
+              <tr>
+                <th scope="row" class="izq valor">
+                  {{ pos.symbol }}
+                  @if (variasDivisas()) {
+                    <span class="tenue divisa-fila cifra">{{ pos.currency }}</span>
+                  }
+                </th>
+                <td class="izq tenue">{{ pos.exchange || '—' }}</td>
+                <td class="cifra">{{ pos.quantity | number: '1.0-4' }}</td>
+                <td class="cifra tenue">{{ pos.avg_cost | number: '1.2-2' }}</td>
+                <td class="cifra ultimo" [class]="destello(pos.symbol)">
+                  {{ pos.market_price | number: '1.2-2' }}
+                </td>
+                @if (hayConversion()) {
+                  <td class="cifra tenue cambio">{{ pos.fx_rate | number: '1.4-4' }}</td>
+                }
+                <td class="cifra">{{ pos.market_value_base | number: '1.2-2' }}</td>
+                <td class="cifra tenue">{{ peso(pos) | number: '1.1-1' }}</td>
+                <td
+                  class="cifra resultado"
+                  [class.sube]="pos.unrealized_pnl_base > 0"
+                  [class.baja]="pos.unrealized_pnl_base < 0"
+                >
+                  {{ pos.unrealized_pnl_base | number: '1.2-2' }}
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+</section>

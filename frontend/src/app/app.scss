@@ -1,0 +1,107 @@
+/**
+ * Barra superior: una linea fina y silenciosa.
+ *
+ * No lleva color a proposito. Lo unico que se mueve en ella es el pulso de
+ * conexion, y lo hace en gris: tampoco eso es dinero.
+ */
+
+.barra {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  height: var(--barra-alta);
+  padding: 0 2rem;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--linea);
+}
+
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logotipo {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.separador {
+  width: 1px;
+  height: 0.875rem;
+  background: var(--linea);
+}
+
+.estado {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cuenta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--tinta-2);
+  letter-spacing: 0.02em;
+}
+
+/* Pulso de conexion: anillo que respira una vez cada tres segundos. */
+.pulso {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tinta);
+  flex: none;
+}
+
+.pulso::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--tinta);
+  animation: respirar 3s ease-out infinite;
+}
+
+.pulso.apagado {
+  background: var(--tinta-3);
+}
+
+.pulso.apagado::after {
+  display: none;
+}
+
+@keyframes respirar {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.lienzo {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 3.5rem 2rem 6rem;
+}
+
+@media (max-width: 720px) {
+  .barra {
+    padding-inline: 1.25rem;
+  }
+
+  .lienzo {
+    padding: 2rem 1.25rem 4rem;
+  }
+}

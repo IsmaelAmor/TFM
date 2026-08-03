@@ -1,11 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Frontend</title>
+  <title>Cartera IBKR</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+
+  <!--
+    Instrument Sans para texto, IBM Plex Mono para cifras. Plex Mono tiene
+    origen en la tipografia tecnica de terminal, que es exactamente el
+    registro de esta aplicacion, y sus figuras tabulares son excelentes.
+
+    Si la defensa se hace sin red, borra estas tres lineas: el stack de
+    respaldo definido en styles.scss (system-ui y ui-monospace) resuelve
+    con dignidad y no se rompe nada.
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
   <app-root></app-root>

@@ -1,0 +1,386 @@
+.cartera {
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+
+/* ---------------- Portada ---------------- */
+
+.portada {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  animation: entrar 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.magnitud {
+  margin: 0;
+  font-size: clamp(2.25rem, 5vw, 3.375rem);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.variacion {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--tinta-2);
+}
+
+.signo {
+  font-size: 0.75em;
+}
+
+.pct::before {
+  content: '·';
+  margin-right: 0.5rem;
+  color: var(--tinta-3);
+}
+
+.glosa {
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--tinta-3);
+}
+
+.nota {
+  max-width: 38rem;
+  margin: 0.625rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--linea);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--tinta-2);
+}
+
+/* ---------------- Cinta de asignación ----------------
+ *
+ * Elemento firma. Cada tramo ocupa el peso real de su posicion y se tine
+ * segun su resultado: si un tramo es ancho y rojo, ese es el problema de
+ * la cartera, y se ve antes de leer un solo numero.
+ */
+
+.cinta-bloque {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.cinta {
+  display: flex;
+  gap: 2px;
+  height: 5rem;
+  animation: barrer 750ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+}
+
+.tramo {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  overflow: hidden;
+  background: var(--realce);
+  border-top: 4px solid var(--tinta-3);
+  transition: transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.tramo:hover {
+  transform: translateY(-3px);
+}
+
+/* Tinte al 18 %: al 9 % los tramos en ganancia no se distinguian del gris. */
+.tramo.gana {
+  background: color-mix(in srgb, var(--sube) 18%, var(--blanco));
+  border-top-color: var(--sube);
+}
+
+.tramo.pierde {
+  background: color-mix(in srgb, var(--baja) 18%, var(--blanco));
+  border-top-color: var(--baja);
+}
+
+.tramo-valor {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.tramo-peso {
+  font-size: 0.6875rem;
+  color: var(--tinta-2);
+  white-space: nowrap;
+}
+
+/* ---------------- Bloques ---------------- */
+
+.bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.bloque-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.titulo {
+  margin: 0;
+  font-weight: 500;
+}
+
+.controles {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.sello {
+  font-size: 0.75rem;
+  color: var(--tinta-3);
+}
+
+.recargar {
+  border: 1px solid var(--linea);
+  background: none;
+  color: var(--tinta-2);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.recargar:hover {
+  border-color: var(--tinta);
+  color: var(--tinta);
+}
+
+/* ---------------- Cifras de cuenta ---------------- */
+
+/*
+ * Dos columnas, no cuatro: solo se muestran valor liquidativo y efectivo.
+ * Se limita el ancho para que dos cifras no queden separadas por medio
+ * metro de vacio en pantallas anchas.
+ */
+.cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  max-width: 42rem;
+  gap: 0 3rem;
+  margin: 0;
+  border-top: 1px solid var(--linea);
+}
+
+.cifras > div {
+  padding-top: 1.125rem;
+  padding-bottom: 0.25rem;
+}
+
+.cifras dt {
+  margin-bottom: 0.4rem;
+}
+
+.cifras dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+/* Glosa de cada magnitud: distinguir efectivo de poder de compra importa. */
+.pie {
+  max-width: 15rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--tinta-3);
+}
+
+/* ---------------- Tabla ---------------- */
+
+.posiciones {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.posiciones th,
+.posiciones td {
+  padding: 0.7rem 0.9rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.posiciones .izq {
+  text-align: left;
+  padding-left: 0;
+}
+
+.posiciones thead th {
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--tinta-3);
+  border-bottom: 1px solid var(--linea);
+  padding-bottom: 0.55rem;
+  vertical-align: bottom;
+}
+
+/* Unidad de la columna, en la propia cabecera y no repetida en cada fila. */
+.unidad {
+  margin-left: 0.35em;
+  font-family: var(--font-num);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tinta-3);
+}
+
+.unidad:empty {
+  display: none;
+}
+
+.posiciones tbody tr {
+  border-bottom: 1px solid var(--linea);
+  transition: background-color 160ms ease;
+}
+
+.posiciones tbody tr:hover {
+  background-color: var(--nube);
+}
+
+.valor {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.divisa-fila {
+  margin-left: 0.4rem;
+  font-size: 0.6875rem;
+  font-weight: 400;
+}
+
+.tenue {
+  color: var(--tinta-3);
+}
+
+.resultado {
+  font-weight: 500;
+}
+
+/* Destello de tick: la celda de precio parpadea cuando el valor cambia. */
+.ultimo {
+  border-radius: 2px;
+}
+
+.ultimo.sube {
+  animation: destello-sube 900ms ease-out;
+}
+
+.ultimo.baja {
+  animation: destello-baja 900ms ease-out;
+}
+
+@keyframes destello-sube {
+  0% {
+    background-color: color-mix(in srgb, var(--sube) 22%, transparent);
+    color: var(--sube);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes destello-baja {
+  0% {
+    background-color: color-mix(in srgb, var(--baja) 22%, transparent);
+    color: var(--baja);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* ---------------- Estados ---------------- */
+
+.aviso {
+  margin: 0;
+  padding: 0.85rem 1.1rem;
+  border-left: 3px solid var(--baja);
+  background: color-mix(in srgb, var(--baja) 5%, var(--blanco));
+  font-size: 0.875rem;
+}
+
+.esperando {
+  margin: 0;
+  color: var(--tinta-3);
+}
+
+/* ---------------- Movimiento ---------------- */
+
+@keyframes entrar {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes barrer {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* ---------------- Estrecho ---------------- */
+
+@media (max-width: 760px) {
+  .cartera {
+    gap: 2.25rem;
+  }
+
+  .cinta {
+    height: 4rem;
+  }
+
+  .tramo {
+    padding: 0.5rem;
+  }
+
+  .tramo-peso {
+    display: none;
+  }
+
+  .pie {
+    max-width: none;
+  }
+
+  .posiciones {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* Columna de tipo de cambio: informativa, nunca protagonista. */
+.cambio {
+  font-size: 0.75rem;
+}
