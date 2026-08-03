@@ -36,12 +36,24 @@ async def get_account_summary(account_id: str | None = None) -> AccountSummary:
 
 
 async def get_portfolio(account_id: str | None = None) -> Portfolio:
-    """Posiciones abiertas, ya valoradas por IB.
+    """Posiciones abiertas, ya valoradas por IB y convertidas a divisa base.
 
     Usa portfolio() y no positions(): el canal reqAccountUpdates trae
     marketPrice, marketValue, unrealizedPNL y realizedPNL, que
     reqPositions no da. Verificado contra DUN684545 el 03/08/2026.
+
+    Los tipos de cambio se leen de accountValues() y no de
+    accountSummary(): comprobado el 03/08/2026, accountSummary solo
+    devuelve la divisa base y no incluye ninguna etiqueta ExchangeRate.
+    accountValues() no es una llamada de red: lee el estado que el canal
+    reqAccountUpdates ya mantiene en memoria, asi que no anade latencia.
     """
     cuenta = account_id or _default_account()
-    items = [i for i in get_ib().portfolio() if i.account == cuenta]
-    return mapper.portfolio_items_to_portfolio(items, cuenta)
+    ib = get_ib()
+
+    base_currency, rates = mapper.account_values_to_fx(ib.accountValues(cuenta))
+    if not base_currency:
+        logger.warning("No se pudo determinar la divisa base de %s", cuenta)
+
+    items = [i for i in ib.portfolio() if i.account == cuenta]
+    return mapper.portfolio_items_to_portfolio(items, cuenta, base_currency, rates)
