@@ -415,10 +415,18 @@ def trade_to_result(trade, error_code=None, error_message="") -> OrderResult:
 
     # Comision real: se suma la de cada ejecucion. En una orden viva no hay
     # fills todavia y queda en None, que es lo correcto: aun no se ha pagado.
+    # Trampa verificada el 04/08/2026 con una venta real: ib_async crea el
+    # Fill con un CommissionReport VACIO (commission=0.0, currency='') y lo
+    # rellena cuando llega commissionReportEvent, que puede ser un instante
+    # despues. Un report sin divisa es un report que IB aun no ha enviado,
+    # no una comision de cero: se ignora y la comision queda en None hasta
+    # que el GET de seguimiento la vea rellena.
     comision = None
     divisa_comision = ""
     for f in getattr(trade, "fills", None) or []:
         report = getattr(f, "commissionReport", None)
+        if not (getattr(report, "currency", "") or ""):
+            continue
         parcial = _importe(getattr(report, "commission", None))
         if parcial is not None:
             comision = (comision or 0.0) + parcial

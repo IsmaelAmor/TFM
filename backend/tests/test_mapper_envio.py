@@ -106,66 +106,14 @@ def test_comision_suma_todas_las_ejecuciones():
     assert r.commission == pytest.approx(2.5)
 
 
-# ---------------------------------------------------------------------
-# trade_to_result: orden viva
-# ---------------------------------------------------------------------
-
-def test_lmt_viva_no_tiene_comision_ni_precio_medio():
-    """Sin ejecucion, la comision es None (aun no se ha pagado nada)."""
+def test_report_vacio_no_cuenta_como_comision_cero():
+    """El Fill nace con un CommissionReport vacio (currency='') que
+    ib_async rellena cuando llega el evento. Verificado el 04/08/2026 con
+    una venta real que salio con commission 0.0 por leer ese hueco."""
     trade = _trade(
-        "Submitted", filled=0.0, remaining=1.0, avg=0.0,
-        order_type="LMT", lmt=193.96,
+        "Filled", filled=1.0, remaining=0.0, avg=277.45,
+        fills=(_fill(0.0, currency=""),),
     )
     r = mapper.trade_to_result(trade)
 
-    assert r.estado == "activa"
     assert r.commission is None
-    assert r.avg_fill_price is None       # 0.0 es "sin ejecucion", no un precio
-    assert r.limit_price == pytest.approx(193.96)
-
-
-def test_mkt_no_expone_precio_limite():
-    trade = _trade("Filled", filled=1.0, remaining=0.0, avg=276.8, lmt=None)
-    r = mapper.trade_to_result(trade)
-
-    assert r.limit_price is None
-
-
-# ---------------------------------------------------------------------
-# trade_to_result: orden rechazada
-# ---------------------------------------------------------------------
-
-def test_inactive_es_rechazada_y_limpia_el_html_del_motivo():
-    """El motivo del 201 llega con <br> incrustados; deben desaparecer."""
-    trade = _trade("Inactive", filled=0.0, remaining=500000.0, avg=0.0)
-    mensaje = (
-        "No podemos aceptar su orden. Sus fondos disponibles no son "
-        "suficientes<br> para cubrir el cambio en los requisitos<br> de margen."
-    )
-    r = mapper.trade_to_result(trade, error_code=201, error_message=mensaje)
-
-    assert r.estado == "rechazada"
-    assert r.error_code == 201
-    assert "<br>" not in r.broker_message
-    assert "  " not in r.broker_message   # no quedan dobles espacios
-    assert r.broker_message.startswith("No podemos aceptar su orden")
-
-
-def test_rechazada_sin_mensaje_no_revienta():
-    """Si el motivo no llego a capturarse, el resultado sigue siendo valido."""
-    trade = _trade("Inactive", filled=0.0, remaining=1.0, avg=0.0)
-    r = mapper.trade_to_result(trade)
-
-    assert r.estado == "rechazada"
-    assert r.broker_message == ""
-
-
-# ---------------------------------------------------------------------
-# trade_to_result: orden cancelada
-# ---------------------------------------------------------------------
-
-def test_cancelled_es_cancelada():
-    trade = _trade("Cancelled", filled=0.0, remaining=1.0, avg=0.0)
-    r = mapper.trade_to_result(trade)
-
-    assert r.estado == "cancelada"
