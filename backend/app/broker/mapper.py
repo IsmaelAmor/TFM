@@ -21,6 +21,7 @@ currency de la etiqueta NetLiquidation. Comprobacion que valida el tipo:
 
 from app.models.account import AccountSummary
 from app.models.portfolio import Portfolio, Position
+from app.models.order import BrokerPreview
 import math
 from datetime import datetime, timezone
 from app.models.instrument import Instrument
@@ -276,4 +277,81 @@ def ticker_to_quote(ticker) -> Quote:
         market_data_type=tipo,
         quote_time=momento,
         received_at=datetime.now(timezone.utc),
+    )
+
+# ---------------------------------------------------------------------
+# Ordenes (T35)
+# ---------------------------------------------------------------------
+
+# Cualquier valor por encima de esto no es un importe: es el centinela con
+# que IB dice "sin dato" (1.7976931348623157e+308, el maximo de un double).
+# Verificado el 04/08/2026: sale siempre en minCommission y maxCommission,
+# y tambien en commission cuando la orden se rechaza.
+_CENTINELA = 1e300
+
+# Errores de IB que significan que la orden no se aceptaria. El 201 es el
+# rechazo por margen, que es el que devuelve DUN684545 al pedir mas de lo
+# que cabe. Los demas cubren contrato mal resuelto (200), precio que no
+# respeta el minTick (110) y validaciones del servidor (321).
+_CODIGOS_RECHAZO = frozenset({110, 200, 201, 202, 203, 321, 383, 481})
+
+
+def _importe(valor) -> float | None:
+    """Traduce a None lo que IB manda como "sin dato" en OrderState.
+
+    No se reutiliza _precio a proposito, aunque se parezcan: _precio
+    descarta los negativos porque un precio negativo no existe, pero aqui
+    los negativos son datos legitimos. equityWithLoanChange vale -1.14 en
+    una compra normal, y pasarlo por _precio lo convertiria en None.
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(v) or abs(v) > _CENTINELA:
+        return None
+    return v
+
+
+def order_state_to_preview(estado, contrato, errores) -> BrokerPreview:
+    """Convierte la respuesta de whatIfOrder en un modelo propio.
+
+    errores es la lista de (codigo, mensaje) que IB emitio durante la
+    llamada. Es imprescindible: el campo status del OrderState vale
+    'PreSubmitted' tanto en una orden aceptada como en una rechazada,
+    verificado el 04/08/2026 comparando una compra de 10 AMZN con una de
+    100.000. Lo unico que las distingue es el error 201, que viaja por el
+    canal de eventos y no por el objeto.
+    """
+    rechazos = [(c, m) for c, m in (errores or []) if c in _CODIGOS_RECHAZO]
+
+    datos = {
+        "con_id": getattr(contrato, "conId", 0) or 0,
+        "symbol": getattr(contrato, "symbol", "") or "",
+        "currency": getattr(contrato, "currency", "") or "",
+        "exchange": getattr(contrato, "exchange", "") or "",
+    }
+
+    if estado is None and not rechazos:
+        # Ni respuesta ni error: el Gateway no contesto. No es un si.
+        return BrokerPreview(
+            accepted_by_broker=False,
+            broker_message="IB Gateway no respondio a la comprobacion previa",
+            **datos,
+        )
+
+    codigo, mensaje = rechazos[0] if rechazos else (None, "")
+
+    return BrokerPreview(
+        accepted_by_broker=not rechazos,
+        broker_status=getattr(estado, "status", "") or "",
+        broker_message=mensaje,
+        error_code=codigo,
+        warning_text=getattr(estado, "warningText", "") or "",
+        commission=_importe(getattr(estado, "commission", None)),
+        commission_currency=getattr(estado, "commissionCurrency", "") or "",
+        init_margin_change=_importe(getattr(estado, "initMarginChange", None)),
+        maint_margin_change=_importe(getattr(estado, "maintMarginChange", None)),
+        equity_with_loan_change=_importe(getattr(estado, "equityWithLoanChange", None)),
+        **datos,
     )
