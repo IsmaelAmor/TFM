@@ -17,7 +17,7 @@ cinco cotizaciones en cinco divisas y el ticker no elige entre ellas.
 """
 
 from typing import Literal
-
+from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -124,3 +124,52 @@ class OrderValidation(BaseModel):
     position_quantity: float = Field(0.0, description="Titulos en cartera del valor")
 
     broker: BrokerPreview | None = None
+
+class OrderResult(BaseModel):
+    """Resultado de enviar una orden al mercado (T36).
+
+    Reune tres cosas en un solo cuerpo: el veredicto previo (validation),
+    la identidad que IB asigna a la orden y el estado en que quedo tras el
+    envio. El frontend decide que pintar mirando 'estado', no el codigo
+    HTTP: la peticion siempre es correcta, lo que varia es el desenlace.
+
+    'estado' es un vocabulario propio y no el status crudo de IB. IB
+    distingue Submitted de PreSubmitted y expone Inactive, ApiCancelled y
+    demas; nada de eso le dice al usuario si su orden se ejecuto, sigue
+    viva o fue rechazada. La traduccion vive en mapper.estado_de_orden.
+    """
+
+    estado: Literal[
+        "ejecutada", "activa", "rechazada", "cancelada", "no_enviada"
+    ] = Field(..., description="Desenlace en lenguaje de la aplicacion")
+
+    order_id: int = Field(0, description="Id de la orden en la sesion (para el GET)")
+    perm_id: int = Field(0, description="Id global y estable que asigna IB")
+
+    con_id: int
+    symbol: str = ""
+    action: str
+    order_type: str
+    quantity: float
+    limit_price: float | None = None
+
+    filled_quantity: float = Field(0.0, description="Titulos ya ejecutados")
+    remaining_quantity: float = Field(0.0, description="Titulos pendientes")
+    avg_fill_price: float | None = Field(None, description="Precio medio de ejecucion")
+
+    # Comision REAL de la ejecucion, no la estimada del whatIfOrder.
+    # Verificado el 04/08/2026 que llega con el fill, asi que en una MKT que
+    # cruza ya esta aqui. En una limitada viva no hay ejecucion y es None.
+    commission: float | None = None
+    commission_currency: str = ""
+
+    broker_status: str = Field("", description="status crudo de IB, informativo")
+    broker_message: str = Field("", description="Motivo del rechazo, si lo hubo")
+    error_code: int | None = None
+
+    # El veredicto previo por el que la orden paso antes de enviarse. Se
+    # incluye tambien cuando todo salio bien: lleva el desglose de coste y
+    # comision que el formulario de compra necesita para el resumen final.
+    validation: OrderValidation | None = None
+
+    submitted_at: datetime | None = None

@@ -18,7 +18,7 @@ import asyncio
 from ib_async import Contract, LimitOrder, MarketOrder
 from app.models.instrument import Instrument
 from app.models.quote import Quote
-from app.models.order import BrokerPreview, OrderRequest
+from app.models.order import BrokerPreview, OrderRequest, OrderResult
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -275,3 +275,122 @@ async def preview_order(req: OrderRequest) -> BrokerPreview:
             ib.errorEvent -= _al_error
 
     return mapper.order_state_to_preview(estado, contrato, capturados)
+
+# ---------------------------------------------------------------------
+# Envio de ordenes (T36)
+# ---------------------------------------------------------------------
+
+# Cuanto se espera, como maximo, a que una orden recien enviada alcance un
+# estado terminal antes de contestar. No es el IB_TIMEOUT de las consultas:
+# una MKT que cruza se resuelve en ~0,2 s y un rechazo por margen en ~0,1 s
+# (medido el 04/08/2026). Una limitada que no cruza no termina nunca; para
+# ella este limite es el que decide devolver 'activa' en lugar de dejar la
+# peticion HTTP colgada.
+_ESPERA_ENVIO = 4.0
+
+# Codigos de error de IB que, al enviar, portan el motivo de un rechazo.
+# El 201 es el rechazo por margen, el unico que DUN684545 emite de verdad.
+# Se excluye a proposito el 202, que es el acuse de una cancelacion y no un
+# problema, y toda la familia 2100+/10167, que son avisos de conexion y de
+# datos diferidos.
+_MOTIVOS_RECHAZO = frozenset({110, 200, 201, 203, 321, 383, 481})
+
+
+def _motivo_de(capturados, order_id: int) -> tuple[int | None, str]:
+    """Primer error de rechazo cuyo reqId coincide con la orden."""
+    for req_id, codigo, mensaje in capturados:
+        if req_id == order_id and codigo in _MOTIVOS_RECHAZO:
+            return codigo, mensaje
+    return None, ""
+
+
+async def _esperar_terminal(trade, segundos: float) -> None:
+    """Cede el control al bucle hasta que la orden termina o vence el plazo.
+
+    El await deja que ib_async procese los eventos del socket y actualice
+    el Trade; sin el, isDone() no cambiaria nunca. Una orden viva que no
+    cruza agota el plazo y se devuelve tal cual esta: 'activa'.
+    """
+    loop = asyncio.get_running_loop()
+    limite = loop.time() + segundos
+    while loop.time() < limite:
+        if trade.isDone():
+            return
+        await asyncio.sleep(0.05)
+
+
+async def place_order(req: OrderRequest) -> OrderResult:
+    """Envia una orden real al mercado y devuelve como quedo.
+
+    A diferencia de preview_order, esto SI opera: deja posicion y aparece
+    en el historial. La validacion de reglas propias es responsabilidad de
+    order_service, que llama a esto solo si la orden paso el veredicto.
+
+    No hace falta cerrojo global como en preview_order. Alli whatIfOrderAsync
+    no da el orderId con el que filtrar y habia que serializar; aqui
+    placeOrder devuelve el Trade con su orderId en el acto, asi que cada
+    envio se queda solo con los errores de su propio reqId.
+    """
+    ib = get_ib()
+    contrato = await _resolver_contrato(req.con_id)
+
+    if req.order_type == "LMT":
+        orden = LimitOrder(req.action, req.quantity, req.limit_price)
+    else:
+        orden = MarketOrder(req.action, req.quantity)
+    orden.account = _default_account()
+
+    capturados: list[tuple[int, int, str]] = []
+
+    def _al_error(*args):
+        """Recoge (reqId, codigo, mensaje) de cada evento de error.
+
+        Firma variable como en preview_order: ib_async ha ido cambiando el
+        numero de parametros de errorEvent entre versiones.
+        """
+        req_id = args[0] if len(args) > 0 else None
+        codigo = args[1] if len(args) > 1 else None
+        mensaje = args[2] if len(args) > 2 else ""
+        if isinstance(codigo, int):
+            capturados.append((req_id, codigo, str(mensaje)))
+
+    ib.errorEvent += _al_error
+    try:
+        trade = ib.placeOrder(contrato, orden)
+        order_id = trade.order.orderId
+        await _esperar_terminal(trade, _ESPERA_ENVIO)
+
+        # Carrera verificada el 04/08/2026: el paso a Inactive llega un
+        # instante ANTES que el error 201 con el motivo. Si la orden acabo
+        # rechazada pero su error aun no ha llegado, se concede una espera
+        # corta; si no, quedaria como 'rechazada' sin explicacion.
+        status = getattr(trade.orderStatus, "status", "") or ""
+        if status in mapper._RECHAZADA and _motivo_de(capturados, order_id) == (None, ""):
+            await asyncio.sleep(1.0)
+    finally:
+        # Se desuscribe siempre, tambien si placeOrder revienta: un
+        # manejador olvidado contaminaria el siguiente envio con errores
+        # ajenos.
+        ib.errorEvent -= _al_error
+
+    codigo, mensaje = _motivo_de(capturados, order_id)
+    return mapper.trade_to_result(trade, error_code=codigo, error_message=mensaje)
+
+
+async def find_order(order_id: int) -> OrderResult | None:
+    """Estado actual de una orden ya enviada en esta sesion.
+
+    Sostiene el GET de seguimiento: el frontend sondea una limitada viva
+    hasta que se ejecuta o se cancela. Usa trades() y no openTrades()
+    porque tambien tiene que encontrar las ya terminadas.
+
+    Limite conocido: tras reiniciar uvicorn solo se recuperan las ordenes
+    VIVAS (verificado el 04/08/2026: openTrades() las repuebla al
+    reconectar con el mismo clientId). Las ya ejecutadas de antes del
+    reinicio no vuelven, lo que es aceptable: el seguimiento interesa
+    mientras la orden sigue en juego, no como historico.
+    """
+    for trade in get_ib().trades():
+        if trade.order.orderId == order_id:
+            return mapper.trade_to_result(trade)
+    return None

@@ -21,7 +21,7 @@ currency de la etiqueta NetLiquidation. Comprobacion que valida el tipo:
 
 from app.models.account import AccountSummary
 from app.models.portfolio import Portfolio, Position
-from app.models.order import BrokerPreview
+from app.models.order import BrokerPreview, OrderResult
 import math
 from datetime import datetime, timezone
 from app.models.instrument import Instrument
@@ -354,4 +354,100 @@ def order_state_to_preview(estado, contrato, errores) -> BrokerPreview:
         maint_margin_change=_importe(getattr(estado, "maintMarginChange", None)),
         equity_with_loan_change=_importe(getattr(estado, "equityWithLoanChange", None)),
         **datos,
+    )
+
+
+# ---------------------------------------------------------------------
+# Envio de ordenes (T36)
+# ---------------------------------------------------------------------
+
+# Traduccion del status crudo de IB al vocabulario de la aplicacion.
+# Verificado el 04/08/2026 con scripts/sondea_ordenes_envio.py contra
+# DUN684545: una MKT que cruza termina en 'Filled'; un rechazo por margen
+# deja la orden en 'Inactive' (no en 'PreSubmitted', como pasaba con
+# whatIfOrder); una cancelacion recorre PendingCancel y acaba en
+# 'Cancelled'. El resto de estados son fases de una orden todavia viva.
+_EJECUTADA = frozenset({"Filled"})
+_RECHAZADA = frozenset({"Inactive", "ValidationError"})
+_CANCELADA = frozenset({"Cancelled", "ApiCancelled", "PendingCancel"})
+
+
+def estado_de_orden(status: str) -> str:
+    """Reduce el status de IB a: ejecutada, activa, rechazada o cancelada.
+
+    Funcion pura y sin dependencias: es el nucleo que se prueba con pytest
+    sin Gateway. Un estado desconocido se trata como 'activa' a proposito;
+    equivocarse hacia "sigue en el mercado" es menos danino que dar por
+    ejecutada o rechazada una orden que no lo esta.
+    """
+    if status in _EJECUTADA:
+        return "ejecutada"
+    if status in _RECHAZADA:
+        return "rechazada"
+    if status in _CANCELADA:
+        return "cancelada"
+    return "activa"
+
+
+def _limpiar_mensaje(mensaje: str) -> str:
+    """IB incrusta <br> en los mensajes de rechazo por margen.
+
+    Verificado el 04/08/2026: el texto del error 201 llega con saltos de
+    linea HTML. Se quitan para que se lea igual en un JSON que en un log.
+    """
+    return " ".join((mensaje or "").replace("<br>", " ").split())
+
+
+def trade_to_result(trade, error_code=None, error_message="") -> OrderResult:
+    """Convierte un Trade de ib_async en un OrderResult propio.
+
+    error_code y error_message vienen de fuera porque el motivo del rechazo
+    NO esta en el Trade: verificado el 04/08/2026, trade.log anota el paso a
+    Inactive con errorCode 0 y mensaje vacio, y el 201 con el texto real
+    viaja por errorEvent. Sin ese dato, una orden rechazada se veria sin
+    explicacion. Duck typing en todo el cuerpo (getattr) para que las
+    pruebas puedan pasar objetos simulados sin ib_async.
+    """
+    orden = getattr(trade, "order", None)
+    estado_ib = getattr(trade, "orderStatus", None)
+    contrato = getattr(trade, "contract", None)
+    status = getattr(estado_ib, "status", "") or ""
+
+    # Comision real: se suma la de cada ejecucion. En una orden viva no hay
+    # fills todavia y queda en None, que es lo correcto: aun no se ha pagado.
+    comision = None
+    divisa_comision = ""
+    for f in getattr(trade, "fills", None) or []:
+        report = getattr(f, "commissionReport", None)
+        parcial = _importe(getattr(report, "commission", None))
+        if parcial is not None:
+            comision = (comision or 0.0) + parcial
+            divisa_comision = getattr(report, "currency", "") or divisa_comision
+
+    avg = _importe(getattr(estado_ib, "avgFillPrice", None))
+    if avg is not None and avg <= 0:
+        avg = None  # 0.0 es "sin ejecucion", no un precio
+
+    tipo = getattr(orden, "orderType", "") or ""
+    limite = _importe(getattr(orden, "lmtPrice", None)) if tipo == "LMT" else None
+
+    return OrderResult(
+        estado=estado_de_orden(status),
+        order_id=int(getattr(orden, "orderId", 0) or 0),
+        perm_id=int(getattr(orden, "permId", 0) or 0),
+        con_id=int(getattr(contrato, "conId", 0) or 0),
+        symbol=getattr(contrato, "symbol", "") or "",
+        action=getattr(orden, "action", "") or "",
+        order_type=tipo,
+        quantity=_to_float(getattr(orden, "totalQuantity", 0.0)),
+        limit_price=limite,
+        filled_quantity=_to_float(getattr(estado_ib, "filled", 0.0)),
+        remaining_quantity=_to_float(getattr(estado_ib, "remaining", 0.0)),
+        avg_fill_price=avg,
+        commission=comision,
+        commission_currency=divisa_comision,
+        broker_status=status,
+        broker_message=_limpiar_mensaje(error_message),
+        error_code=error_code,
+        submitted_at=datetime.now(timezone.utc),
     )

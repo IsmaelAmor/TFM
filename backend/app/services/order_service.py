@@ -20,7 +20,7 @@ Reglas de esta capa:
 """
 
 from app.broker import ib_gateway
-from app.models.order import BrokerPreview, OrderRequest, OrderValidation
+from app.models.order import BrokerPreview, OrderRequest, OrderResult, OrderValidation
 from app.models.quote import Quote
 
 # Colchon sobre el precio de referencia en las ordenes de mercado. Una
@@ -59,6 +59,44 @@ async def validate_order(req: OrderRequest) -> OrderValidation:
         cash=account.total_cash,
         position_quantity=en_cartera,
     )
+
+async def submit_order(req: OrderRequest) -> OrderResult:
+    """Envia una orden, pero solo si pasa la validacion previa de T35.
+
+    Este es el punto donde la regla "no se opera a credito" se hace
+    obligatoria: la validacion contra efectivo corre SIEMPRE antes del
+    envio, no como consejo que el frontend pueda saltarse. Si el veredicto
+    es negativo, no se toca IB y se devuelve el porque.
+
+    Se revalida aunque el frontend ya haya llamado a /validate: entre que
+    el usuario ve el semaforo verde y pulsa enviar, el precio puede haberse
+    movido o el efectivo haber cambiado. La comprobacion es barata al lado
+    de una orden mal enviada.
+    """
+    validation = await validate_order(req)
+
+    if not validation.accepted:
+        return OrderResult(
+            estado="no_enviada",
+            con_id=req.con_id,
+            symbol=validation.symbol,
+            action=req.action,
+            order_type=req.order_type,
+            quantity=req.quantity,
+            limit_price=req.limit_price,
+            validation=validation,
+        )
+
+    result = await ib_gateway.place_order(req)
+    # Se adjunta el veredicto tambien en el caso bueno: lleva el desglose de
+    # coste y comision que el resumen de compra del frontend va a mostrar.
+    result.validation = validation
+    return result
+
+
+async def get_order(order_id: int) -> OrderResult | None:
+    """Estado actual de una orden ya enviada. None si no existe en la sesion."""
+    return await ib_gateway.find_order(order_id)
 
 
 def _precio_de_referencia(req: OrderRequest, quote: Quote):
