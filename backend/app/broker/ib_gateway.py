@@ -14,6 +14,11 @@ from app.broker import mapper
 from app.broker.ib_client import get_ib
 from app.models.account import AccountSummary
 from app.models.portfolio import Portfolio
+import asyncio
+from ib_async import Contract
+from app.models.instrument import Instrument
+from app.models.quote import Quote
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +62,77 @@ async def get_portfolio(account_id: str | None = None) -> Portfolio:
 
     items = [i for i in ib.portfolio() if i.account == cuenta]
     return mapper.portfolio_items_to_portfolio(items, cuenta, base_currency, rates)
+
+class InstrumentNotFound(Exception):
+    """El conId solicitado no corresponde a ningun contrato de IB."""
+
+
+async def search_instruments(query: str, limit: int = 20) -> list[Instrument]:
+    """Busca instrumentos por ticker o por nombre de empresa.
+
+    Usa reqMatchingSymbols y no reqContractDetails porque es el unico metodo
+    de la API que acepta texto parcial y busca tambien por nombre: escribir
+    "Iberdrola" devuelve IBE, y reqContractDetails habria exigido conocer ya
+    el ticker exacto, que es justo lo que el usuario no sabe.
+
+    Verificado el 04/08/2026: la respuesta ya incluye el nombre del emisor,
+    asi que una sola llamada resuelve el buscador entero.
+
+    IB limita este metodo a una peticion por segundo. No se protege aqui
+    porque el buscador del frontend hara debounce; si en algun momento se
+    llamara en bucle, este es el sitio donde pondriamos el limitador.
+    """
+    descripciones = await get_ib().reqMatchingSymbolsAsync(query)
+    return mapper.contract_descriptions_to_instruments(descripciones or [])[:limit]
+
+
+async def get_quote(con_id: int) -> Quote:
+    """Ultimo precio conocido de un instrumento, identificado por conId.
+
+    Por conId y no por ticker a proposito: "AMZN" corresponde a cinco
+    cotizaciones distintas en cinco divisas, y pedir precio "de AMZN" no
+    tendria una respuesta unica.
+
+    Pide una foto (snapshot) y no un flujo continuo. Con datos retrasados el
+    snapshot funciona, verificado el 04/08/2026, y ademas se cierra solo:
+    un flujo habria que cancelarlo, y una cancelacion olvidada consume una
+    de las lineas de datos de mercado de la cuenta hasta reiniciar.
+    """
+    ib = get_ib()
+
+    # Primero resolvemos el contrato completo: reqMktData necesita saber en
+    # que mercado pedir el precio, y el conId por si solo no lo dice.
+    detalles = await ib.reqContractDetailsAsync(Contract(conId=con_id))
+    if not detalles:
+        raise InstrumentNotFound(f"No existe ningun contrato con conId {con_id}")
+
+    detalle = detalles[0]
+    contrato = detalle.contract
+
+    # SMART es el enrutador de IB: elige el mercado con mejor ejecucion y es
+    # el que tiene datos retrasados disponibles. Solo se usa si el contrato
+    # lo admite; si no, se pide al mercado principal.
+    if "SMART" in (getattr(detalle, "validExchanges", "") or ""):
+        contrato.exchange = "SMART"
+    elif not contrato.exchange:
+        contrato.exchange = contrato.primaryExchange
+
+    # reqTickersAsync pide el snapshot y espera a que IB lo de por completo.
+    # El wait_for es la red de seguridad: si el mercado esta cerrado y el
+    # snapshot no llega nunca, la peticion HTTP no puede quedarse colgada.
+    try:
+        tickers = await asyncio.wait_for(
+            ib.reqTickersAsync(contrato), timeout=settings.IB_TIMEOUT
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Sin respuesta de precio para conId %s", con_id)
+        tickers = []
+
+    if not tickers:
+        # Devolvemos una cotizacion vacia y no un error: que un valor no
+        # cotice ahora mismo es normal, no es un fallo del sistema.
+        return mapper.ticker_to_quote(
+            type("TickerVacio", (), {"contract": contrato, "marketDataType": settings.IB_MARKET_DATA_TYPE})()
+        )
+
+    return mapper.ticker_to_quote(tickers[0])

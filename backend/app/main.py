@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import account, portfolio, status
+from app.api.routers import account, instruments, portfolio, status
 from app.broker import ib_client
 from app.config import settings
 
@@ -56,3 +56,4 @@ app.add_middleware(
 app.include_router(status.router, prefix="/api")
 app.include_router(account.router, prefix="/api")
 app.include_router(portfolio.router, prefix="/api")
+app.include_router(instruments.router, prefix="/api")

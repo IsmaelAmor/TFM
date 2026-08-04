@@ -36,6 +36,18 @@ async def connect() -> None:
         clientId=settings.IB_CLIENT_ID,
         timeout=settings.IB_TIMEOUT,
     )
+    # Tipo de dato de mercado para toda la sesion. Se fija aqui y no en
+    # cada peticion de precio porque es un ajuste del cliente: IB lo
+    # guarda y lo aplica a todo lo posterior. Repetirlo por peticion no
+    # cambiaria nada y abriria la puerta a que dos partes del codigo
+    # asumieran tipos distintos.
+    #
+    # El valor 3 es dato retrasado unos 15 minutos. Es el unico disponible
+    # en la cuenta paper DUN684545, que no tiene suscripcion de datos en
+    # tiempo real. Configurable via IB_MARKET_DATA_TYPE por si algun dia
+    # la hubiera: pasaria a 1 sin tocar codigo.
+    _ib.reqMarketDataType(settings.IB_MARKET_DATA_TYPE)
+    
     logger.info(
         "Conectado a IB Gateway %s:%s (clientId=%s)",
         settings.IB_HOST,

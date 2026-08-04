@@ -21,6 +21,10 @@ currency de la etiqueta NetLiquidation. Comprobacion que valida el tipo:
 
 from app.models.account import AccountSummary
 from app.models.portfolio import Portfolio, Position
+import math
+from datetime import datetime, timezone
+from app.models.instrument import Instrument
+from app.models.quote import Quote
 
 # IB usa esta pseudodivisa para las filas ya consolidadas. No es una divisa
 # real y nunca debe entrar en el diccionario de tipos de cambio.
@@ -154,3 +158,122 @@ def account_values_to_summary(values, account_id: str) -> AccountSummary:
                 currency = v.currency
 
     return AccountSummary(account_id=account_id, currency=currency, **datos)
+
+# ---------------------------------------------------------------------
+# Instrumentos (T33)
+# ---------------------------------------------------------------------
+
+# Mercados que devuelve reqMatchingSymbols y que no son negociables.
+# Verificado el 04/08/2026 buscando "Iberdrola": IBE.DUM, IBE.CASH, IBE.RTS
+# y otros diez aparecen en CORPACT, que es donde IB coloca los artefactos
+# de operaciones societarias (ampliaciones, dividendos en especie, derechos).
+# VALUE contiene lineas de valoracion de instrumentos ya extinguidos y
+# DOLLR4LOT es un mercado de lotes sueltos. Ninguno se puede comprar, asi
+# que ofrecerlos en el buscador seria ofrecer algo que la orden rechazaria.
+_MERCADOS_NO_NEGOCIABLES = frozenset({"CORPACT", "VALUE", "DOLLR4LOT"})
+
+
+def contract_descriptions_to_instruments(descriptions) -> list[Instrument]:
+    """Convierte la respuesta de reqMatchingSymbols en instrumentos propios.
+
+    Filtra a secType STK por decision de alcance: la cartera es de acciones
+    y ETFs, y ambos llegan de IB como STK. Con ello desaparecen los BOND
+    (que ademas vienen sin simbolo y con conId -1), los IND y los FUND que
+    devuelve la busqueda.
+    """
+    salida: list[Instrument] = []
+    for desc in descriptions:
+        c = getattr(desc, "contract", None)
+        if c is None:
+            continue
+        if getattr(c, "secType", "") != "STK":
+            continue
+        if not getattr(c, "symbol", "") or getattr(c, "conId", 0) <= 0:
+            continue
+        if (getattr(c, "primaryExchange", "") or "") in _MERCADOS_NO_NEGOCIABLES:
+            continue
+
+        salida.append(
+            Instrument(
+                con_id=c.conId,
+                symbol=c.symbol,
+                # description es el nombre del emisor y viene ya en la
+                # busqueda. Se usa getattr porque es un campo que la API de
+                # TWS anadio tarde: si un Gateway antiguo no lo mandara, el
+                # buscador seguiria funcionando con el ticker a secas.
+                name=getattr(c, "description", "") or "",
+                sec_type=c.secType,
+                currency=getattr(c, "currency", "") or "",
+                exchange=getattr(c, "primaryExchange", "") or "",
+            )
+        )
+    return salida
+
+
+# ---------------------------------------------------------------------
+# Cotizaciones (T34)
+# ---------------------------------------------------------------------
+
+
+def _precio(valor) -> float | None:
+    """Traduce a None lo que IB usa para decir "no hay dato".
+
+    Son dos cosas distintas y hay que cazar las dos, verificado el
+    04/08/2026 en el propio ticker: IBDefaults(emptyPrice=-1, unset=nan).
+    Un nan colado en un JSON lo rompe, y un -1 se pinta como un precio
+    negativo perfectamente creible. Ninguno de los dos puede salir de aqui.
+    """
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(v) or math.isinf(v) or v < 0:
+        return None
+    return v
+
+
+def ticker_to_quote(ticker) -> Quote:
+    """Convierte un Ticker de ib_async en una Quote propia.
+
+    ib_async ya normaliza los ticks retrasados (tipos 66-76 de la API) a los
+    campos last, bid, ask y close de siempre, verificado el 04/08/2026. Este
+    mapper no necesita saber que el dato venia retrasado; solo lo anota.
+
+    La variacion se calcula aqui y no en Angular por el mismo criterio que
+    los totales de cartera: es un dato derivado que el backend puede razonar
+    y el frontend solo pintaria.
+    """
+    contrato = getattr(ticker, "contract", None)
+
+    last = _precio(getattr(ticker, "last", None))
+    close = _precio(getattr(ticker, "close", None))
+
+    change = None
+    change_pct = None
+    if last is not None and close is not None and close != 0:
+        change = last - close
+        change_pct = (change / close) * 100
+
+    tipo = int(getattr(ticker, "marketDataType", 3) or 3)
+
+    # delayedLastTimestamp es el momento al que corresponde el precio, que
+    # no es el momento en que lo recibimos. Si no viniera, se cae a time.
+    momento = getattr(ticker, "delayedLastTimestamp", None) or getattr(ticker, "time", None)
+
+    return Quote(
+        con_id=getattr(contrato, "conId", 0) or 0,
+        symbol=getattr(contrato, "symbol", "") or "",
+        currency=getattr(contrato, "currency", "") or "",
+        exchange=getattr(contrato, "primaryExchange", "") or getattr(contrato, "exchange", "") or "",
+        last=last,
+        bid=_precio(getattr(ticker, "bid", None)),
+        ask=_precio(getattr(ticker, "ask", None)),
+        close=close,
+        volume=_precio(getattr(ticker, "volume", None)),
+        change=change,
+        change_pct=change_pct,
+        delayed=tipo in (3, 4),
+        market_data_type=tipo,
+        quote_time=momento,
+        received_at=datetime.now(timezone.utc),
+    )

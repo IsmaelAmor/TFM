@@ -19,6 +19,7 @@ class Settings:
     IB_HOST: str = os.getenv("IB_HOST", "127.0.0.1")
     IB_PORT: int = int(os.getenv("IB_PORT", "4002"))
     IB_CLIENT_ID: int = int(os.getenv("IB_CLIENT_ID", "1"))
+    IB_MARKET_DATA_TYPE: int = int(os.getenv("IB_MARKET_DATA_TYPE", "3"))
     APP_PORT: int = int(os.getenv("APP_PORT", "8000"))
     FRONT_ORIGIN: str = os.getenv("FRONT_ORIGIN", "http://localhost:4200")
 
