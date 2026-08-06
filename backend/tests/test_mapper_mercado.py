@@ -84,23 +84,25 @@ def test_descarta_los_bonos_sin_simbolo():
 
 
 def test_descarta_los_artefactos_de_operaciones_societarias():
-    """IBE.CASH y compania son STK, pero no se pueden comprar.
+    """El artefacto societario se descarta por su mercado, no por la divisa.
 
-    Aparecen en CORPACT al buscar 'Iberdrola'. Si el filtro fuera solo por
-    secType colarian doce de estos por delante de la accion real.
+    IBE.CASH y compania son STK, pero no se pueden comprar: aparecen en
+    CORPACT al buscar. Se prueba con valores en USD a proposito, para que
+    el filtro de divisa (que descartaria IBE por estar en EUR) no tape lo
+    que aqui se verifica: que el filtro de mercado funciona por si solo.
     """
     entradas = [
-        descripcion(symbol="IBE", currency="EUR", primary="BM", con_id=46586284,
-                    description="IBERDROLA SA."),
-        descripcion(symbol="IBE.CASH", currency="EUR", primary="CORPACT", con_id=467726937,
-                    description="IBERDROLA SA."),
-        descripcion(symbol="IBE00.OLD", currency="EUR", primary="VALUE", con_id=713599810,
-                    description="IBERDROLA SA."),
+        descripcion(symbol="ACME", currency="USD", primary="NASDAQ", con_id=1001,
+                    description="ACME CORP"),
+        descripcion(symbol="ACME.CASH", currency="USD", primary="CORPACT", con_id=1002,
+                    description="ACME CORP"),
+        descripcion(symbol="ACME00.OLD", currency="USD", primary="VALUE", con_id=1003,
+                    description="ACME CORP"),
     ]
 
     salida = mapper.contract_descriptions_to_instruments(entradas)
 
-    assert [i.symbol for i in salida] == ["IBE"]
+    assert [i.symbol for i in salida] == ["ACME"]
 
 
 def test_aguanta_un_contrato_sin_campo_description():
@@ -170,3 +172,20 @@ def test_marca_el_dato_como_retrasado():
     assert mapper.ticker_to_quote(ticker(tipo=3)).delayed is True
     assert mapper.ticker_to_quote(ticker(tipo=4)).delayed is True
     assert mapper.ticker_to_quote(ticker(tipo=1)).delayed is False
+
+def test_descarta_lo_que_no_cotiza_en_la_divisa_operativa():
+    """Restriccion de divisa (IB_TRADING_CURRENCY, USD por defecto).
+
+    "AMZN" cotiza en varias plazas y divisas; operar en varias meteria
+    riesgo de cambio en cada orden. El buscador solo ofrece la divisa
+    operativa. Aqui: el AMZN en USD pasa, el mismo en EUR se descarta.
+    """
+    entradas = [
+        descripcion(symbol="AMZN", currency="USD", primary="NASDAQ", con_id=3691937),
+        descripcion(symbol="AMZN", currency="EUR", primary="IBIS", con_id=502092331),
+    ]
+
+    salida = mapper.contract_descriptions_to_instruments(entradas)
+
+    assert [i.currency for i in salida] == ["USD"]
+    assert len(salida) == 1

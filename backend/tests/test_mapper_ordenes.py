@@ -255,3 +255,14 @@ def test_una_limitada_sin_precio_no_se_admite():
 def test_una_de_mercado_con_precio_limite_no_se_admite():
     with pytest.raises(ValueError):
         OrderRequest(con_id=3691937, action="BUY", quantity=10, limit_price=279.0)
+
+def test_rechaza_cantidad_fraccionaria():
+    """IB veta el tamano fraccionario por API (error 10243); se ataja antes."""
+    with pytest.raises(ValueError):
+        OrderRequest(con_id=3691937, action="BUY", quantity=0.3)
+
+
+def test_acepta_cantidad_entera_aunque_venga_como_float():
+    """10.0 es un entero valido: el veto es a la parte decimal, no al tipo."""
+    orden = OrderRequest(con_id=3691937, action="BUY", quantity=10.0)
+    assert orden.quantity == 10

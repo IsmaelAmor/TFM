@@ -20,7 +20,6 @@ from typing import Literal
 from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
-
 class OrderRequest(BaseModel):
     """Orden que el usuario quiere comprobar antes de enviarla.
 
@@ -43,12 +42,21 @@ class OrderRequest(BaseModel):
         como un 422 con el campo senalado, que es lo que el frontend puede
         pintar junto al input. En el servicio saldria como un 400 generico.
         """
+        # Solo titulos enteros. IB rechaza el tamano fraccionario por API
+        # con el error 10243 (verificado el 06/08/2026: una orden de 0,3
+        # AMZN pasaba la validacion previa y luego era IMPOSIBLE de enviar,
+        # porque whatIfOrder no lo veta pero placeOrder si). Vetarlo aqui
+        # hace honesta la comprobacion previa: lo que se declara admisible
+        # se puede cursar. El fraccionario es ademas ajeno a la gestion de
+        # una cartera de acciones, que se mueve en titulos.
+        if self.quantity != int(self.quantity):
+            raise ValueError("La cantidad debe ser un numero entero de titulos")
+
         if self.order_type == "LMT" and self.limit_price is None:
             raise ValueError("Una orden limitada necesita limit_price")
         if self.order_type == "MKT" and self.limit_price is not None:
             raise ValueError("Una orden de mercado no lleva limit_price")
         return self
-
 
 class BrokerPreview(BaseModel):
     """Lo que contesta IB a un whatIfOrder, ya traducido.

@@ -26,6 +26,7 @@ import math
 from datetime import datetime, timezone
 from app.models.instrument import Instrument
 from app.models.quote import Quote
+from app.config import settings
 
 # IB usa esta pseudodivisa para las filas ya consolidadas. No es una divisa
 # real y nunca debe entrar en el diccionario de tipos de cambio.
@@ -188,6 +189,15 @@ def contract_descriptions_to_instruments(descriptions) -> list[Instrument]:
         if c is None:
             continue
         if getattr(c, "secType", "") != "STK":
+            continue
+        # Restriccion de divisa (decision de alcance, configurable via
+        # IB_TRADING_CURRENCY). El mismo ticker cotiza en varias plazas y
+        # divisas —"AMZN" aparece en pesos, francos y dolares canadienses—
+        # y operar en varias meteria riesgo de cambio en cada orden. Se
+        # limita a una unica divisa operativa (USD por defecto) para que
+        # todo lo que el buscador ofrezca se pueda pagar con el mismo
+        # efectivo. No es una limitacion tecnica: es alcance deliberado.
+        if getattr(c, "currency", "") != settings.IB_TRADING_CURRENCY:
             continue
         if not getattr(c, "symbol", "") or getattr(c, "conId", 0) <= 0:
             continue
