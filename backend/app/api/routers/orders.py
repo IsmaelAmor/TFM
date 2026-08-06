@@ -1,4 +1,11 @@
-"""Validacion previa de ordenes."""
+"""Validacion previa y envio de ordenes (T35, T36).
+
+Aviso a quien edite este fichero: cada endpoint lleva SU decorador
+inmediatamente encima de SU funcion. Apilar dos @router.post sobre la
+misma funcion no encadena nada, registra dos rutas que ejecutan lo mismo,
+y aqui eso significaba que comprobar una orden la enviaba al mercado.
+Paso el 05/08/2026. Hay una prueba en tests/test_rutas.py que lo vigila.
+"""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,6 +22,25 @@ router = APIRouter(tags=["ordenes"], dependencies=[Depends(require_ib)])
     response_model=OrderValidation,
     summary="Comprueba una orden sin enviarla",
 )
+async def validate_order(req: OrderRequest) -> OrderValidation:
+    """POST y no GET aunque no modifique nada.
+
+    La orden es un cuerpo con cinco campos y no un identificador; meterla
+    en la query string la haria incomoda de leer y de cachear mal. Y el
+    verbo separa con claridad esta ruta de la de envio, que es POST /orders
+    y si modifica.
+
+    Una orden rechazada devuelve 200 con accepted=false, no un 4xx: la
+    peticion es correcta y la respuesta es un veredicto con sus motivos.
+    Un 400 obligaria al frontend a leer el error para pintar la misma
+    informacion que ya viene en el cuerpo.
+    """
+    try:
+        return await order_service.validate_order(req)
+    except InstrumentNotFound as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+
+
 @router.post(
     "/orders",
     response_model=OrderResult,
@@ -24,7 +50,7 @@ async def create_order(req: OrderRequest) -> OrderResult:
     """Envia una orden, pasando obligatoriamente por la validacion previa.
 
     Devuelve 200 y no 201, por el mismo criterio que /orders/validate: el
-    desenlace viaja en 'estado' (ejecutada, activa, rechazada o
+    desenlace viaja en 'estado' (ejecutada, activa, rechazada, cancelada o
     no_enviada), no en el codigo HTTP. Una orden rechazada es una respuesta
     correcta a una peticion correcta, no un error del cliente; obligar al
     frontend a leer el cuerpo de un 4xx para pintar el motivo que ya viene
@@ -50,20 +76,3 @@ async def read_order(order_id: int) -> OrderResult:
             detail=f"No hay ninguna orden con id {order_id} en esta sesion",
         )
     return result
-async def validate_order(req: OrderRequest) -> OrderValidation:
-    """POST y no GET aunque no modifique nada.
-
-    La orden es un cuerpo con cinco campos y no un identificador; meterla
-    en la query string la haria incomoda de leer y de cachear mal. Y el
-    verbo separa con claridad esta ruta de la de envio, que sera
-    POST /orders y si modifica.
-
-    Una orden rechazada devuelve 200 con accepted=false, no un 4xx: la
-    peticion es correcta y la respuesta es un veredicto con sus motivos.
-    Un 400 obligaria al frontend a leer el error para pintar la misma
-    informacion que ya viene en el cuerpo.
-    """
-    try:
-        return await order_service.validate_order(req)
-    except InstrumentNotFound as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
