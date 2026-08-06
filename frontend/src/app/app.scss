@@ -104,4 +104,48 @@
   .lienzo {
     padding: 2rem 1.25rem 4rem;
   }
+
+  /* ---------------- Navegación ----------------
+ *
+ * Enlaces de la barra. Fiel al sistema: sin subrayado ni color de enlace
+ * del navegador; tinta apagada para la sección donde no estás, tinta plena
+ * y una línea inferior para la sección activa. El color sigue sin gastarse
+ * aquí: navegar no es una cifra de resultado.
+ */
+
+.navegacion {
+  display: flex;
+  gap: 1.75rem;
+}
+
+.navegacion a {
+  position: relative;
+  text-decoration: none;
+  color: var(--tinta-3);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0;
+  transition: color 140ms ease;
+}
+
+.navegacion a:hover {
+  color: var(--tinta);
+}
+
+.navegacion a.activo {
+  color: var(--tinta);
+}
+
+/* La sección activa se subraya con una línea de tinta, no con color. */
+.navegacion a.activo::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 2px;
+  background: var(--tinta);
+}
 }

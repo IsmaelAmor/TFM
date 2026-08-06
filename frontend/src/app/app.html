@@ -5,6 +5,11 @@
     <span class="rotulo">Interactive Brokers</span>
   </div>
 
+  <nav class="navegacion">
+    <a routerLink="/cartera" routerLinkActive="activo">Cartera</a>
+    <a routerLink="/operar" routerLinkActive="activo">Operar</a>
+  </nav>
+
   <div class="estado">
     @if (sesion(); as s) {
       @if (s.connected) {

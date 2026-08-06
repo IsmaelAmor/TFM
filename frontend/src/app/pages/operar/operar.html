@@ -1,0 +1,316 @@
+<!--
+  Pantalla de operativa (T58, T59).
+
+  La plantilla refleja la maquina de estados de operar.ts: cada bloque
+  @if(fase()...) pinta una fase. El buscador esta siempre visible; debajo
+  aparece el formulario cuando hay un instrumento elegido, luego el panel
+  de veredicto, y al final el resultado del envio. El color, fiel al
+  sistema de diseño, se reserva a las cifras de resultado y al veredicto:
+  el resto es tinta sobre papel.
+-->
+
+<section class="operar">
+  <header class="portada">
+    <h1 class="rotulo titulo">Operar</h1>
+    <p class="glosa">
+      Busca un valor, comprueba la orden contra tu efectivo y envíala. La
+      comprobación previa es obligatoria: el envío solo se habilita si la
+      orden pasa la validación.
+    </p>
+  </header>
+
+  <!-- ============================ Buscador (T58) ============================ -->
+  <div class="bloque">
+    <label class="rotulo" for="buscar">Instrumento</label>
+    <div class="buscador">
+      <input
+        id="buscar"
+        type="text"
+        class="entrada"
+        autocomplete="off"
+        placeholder="Ticker o nombre: AMZN, Iberdrola…"
+        [value]="termino()"
+        (input)="alEscribir($any($event.target).value)"
+      />
+      @if (buscando()) {
+        <span class="rotulo tenue">Buscando…</span>
+      }
+    </div>
+
+    <!-- Lista de resultados. Cada uno lleva su divisa y mercado porque el
+         mismo ticker cotiza en varios sitios y hay que poder distinguirlos. -->
+    @if (resultados().length > 0) {
+      <ul class="resultados">
+        @for (inst of resultados(); track inst.con_id) {
+          <li>
+            <button type="button" class="resultado" (click)="elegir(inst)">
+              <span class="simbolo cifra">{{ inst.symbol }}</span>
+              <span class="nombre">{{ inst.name }}</span>
+              <span class="mercado rotulo">{{ inst.exchange }} · {{ inst.currency }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+
+  <!-- ===================== Formulario de orden (T59) ===================== -->
+  @if (seleccionado(); as inst) {
+    <div class="bloque ficha">
+      <!-- Cabecera del instrumento elegido, con su precio si llegó -->
+      <div class="elegido">
+        <div>
+          <span class="simbolo-grande cifra">{{ inst.symbol }}</span>
+          <span class="nombre">{{ inst.name }}</span>
+        </div>
+        <button type="button" class="enlace" (click)="reiniciar()">Cambiar</button>
+      </div>
+
+      @if (precio(); as q) {
+        <dl class="precio">
+          <div>
+            <dt class="rotulo">Último</dt>
+            <dd class="cifra">
+              @if (q.last !== null) {
+                {{ q.last | number: '1.2-2' }} {{ q.currency }}
+              } @else {
+                <span class="tenue">—</span>
+              }
+            </dd>
+          </div>
+          <div>
+            <dt class="rotulo">Compra / Venta</dt>
+            <dd class="cifra">
+              <span [class.tenue]="q.bid === null">{{ q.bid !== null ? (q.bid | number: '1.2-2') : '—' }}</span>
+              /
+              <span [class.tenue]="q.ask === null">{{ q.ask !== null ? (q.ask | number: '1.2-2') : '—' }}</span>
+            </dd>
+          </div>
+          <div>
+            <dt class="rotulo">Cierre ant.</dt>
+            <dd class="cifra">{{ q.close !== null ? (q.close | number: '1.2-2') : '—' }}</dd>
+          </div>
+        </dl>
+        @if (q.delayed) {
+          <p class="nota">
+            Precio retrasado ~15 min. Es orientativo: el coste real lo calcula
+            la validación con un colchón sobre este precio.
+          </p>
+        }
+      }
+
+      <!-- Campos de la orden. Cada cambio invalida el veredicto anterior. -->
+      <div class="campos">
+        <div class="campo">
+          <span class="rotulo">Operación</span>
+          <div class="par">
+            <button
+              type="button"
+              class="opcion"
+              [class.activa]="accion() === 'BUY'"
+              (click)="ponAccion('BUY')"
+            >Comprar</button>
+            <button
+              type="button"
+              class="opcion"
+              [class.activa]="accion() === 'SELL'"
+              (click)="ponAccion('SELL')"
+            >Vender</button>
+          </div>
+        </div>
+
+        <div class="campo">
+          <span class="rotulo">Tipo</span>
+          <div class="par">
+            <button
+              type="button"
+              class="opcion"
+              [class.activa]="tipo() === 'MKT'"
+              (click)="ponTipo('MKT')"
+            >Mercado</button>
+            <button
+              type="button"
+              class="opcion"
+              [class.activa]="tipo() === 'LMT'"
+              (click)="ponTipo('LMT')"
+            >Límite</button>
+          </div>
+        </div>
+
+        <div class="campo">
+          <label class="rotulo" for="cantidad">Cantidad (títulos)</label>
+          <input
+            id="cantidad"
+            type="number"
+            min="1"
+            step="1"
+            class="entrada cifra"
+            [value]="cantidad() ?? ''"
+            (input)="ponCantidad($any($event.target).value)"
+          />
+        </div>
+
+        @if (tipo() === 'LMT') {
+          <div class="campo">
+            <label class="rotulo" for="limite">Precio límite</label>
+            <input
+              id="limite"
+              type="number"
+              min="0"
+              step="0.01"
+              class="entrada cifra"
+              [value]="limite() ?? ''"
+              (input)="ponLimite($any($event.target).value)"
+            />
+          </div>
+        }
+      </div>
+
+      <!-- Boton de validar: siempre visible mientras se compone -->
+      @if (fase() === 'componiendo' || fase() === 'validada') {
+        <button
+          type="button"
+          class="principal"
+          [disabled]="!puedeValidar() || validando()"
+          (click)="validar()"
+        >
+          {{ validando() ? 'Comprobando…' : 'Comprobar orden' }}
+        </button>
+      }
+    </div>
+  }
+
+  <!-- ===================== Panel de veredicto ===================== -->
+  @if (validacion(); as v) {
+    <div class="bloque veredicto" [class.aceptada]="v.accepted" [class.rechazada]="!v.accepted">
+      <header class="veredicto-cabecera">
+        <span class="rotulo">Comprobación previa</span>
+        <span class="dictamen" [class.sube]="v.accepted" [class.baja]="!v.accepted">
+          {{ v.accepted ? 'Admisible' : 'No admisible' }}
+        </span>
+      </header>
+
+      <!-- Motivos de rechazo: dinero que no se puede gastar, van en rojo -->
+      @if (v.reasons.length > 0) {
+        <ul class="motivos">
+          @for (r of v.reasons; track r) {
+            <li class="motivo baja">{{ r }}</li>
+          }
+        </ul>
+      }
+
+      <!-- Avisos: no impiden operar, van en tinta con línea lateral -->
+      @if (v.warnings.length > 0) {
+        <ul class="avisos">
+          @for (w of v.warnings; track w) {
+            <li class="aviso-item">{{ w }}</li>
+          }
+        </ul>
+      }
+
+      <!-- Desglose del coste, para que el usuario compruebe la cuenta -->
+      <dl class="desglose">
+        <div>
+          <dt class="rotulo">Precio de referencia</dt>
+          <dd class="cifra">
+            {{ v.reference_price !== null ? (v.reference_price | number: '1.2-2') : '—' }}
+            <span class="tenue">{{ v.currency }} · {{ v.price_source }}</span>
+          </dd>
+        </div>
+        <div>
+          <dt class="rotulo">Coste estimado</dt>
+          <dd class="cifra">{{ v.estimated_cost_base | number: '1.2-2' }} {{ v.base_currency }}</dd>
+        </div>
+        <div>
+          <dt class="rotulo">Comisión estimada</dt>
+          <dd class="cifra">
+            {{ v.commission !== null ? (v.commission_base | number: '1.2-2') : '—' }}
+            {{ v.commission !== null ? v.base_currency : '' }}
+          </dd>
+        </div>
+        <div>
+          <dt class="rotulo">Total</dt>
+          <dd class="cifra fuerte">{{ v.total_base | number: '1.2-2' }} {{ v.base_currency }}</dd>
+        </div>
+        <div>
+          <dt class="rotulo">Efectivo disponible</dt>
+          <dd class="cifra">{{ v.cash_available | number: '1.2-2' }} {{ v.base_currency }}</dd>
+        </div>
+        <div>
+          <dt class="rotulo">Efectivo tras la orden</dt>
+          <dd class="cifra" [class.baja]="v.cash_after < 0">
+            {{ v.cash_after | number: '1.2-2' }} {{ v.base_currency }}
+          </dd>
+        </div>
+      </dl>
+
+      <!-- Envío: solo existe si el veredicto es favorable -->
+      @if (v.accepted && fase() === 'validada') {
+        <div class="confirmar">
+          <p class="nota">
+            Vas a {{ accion() === 'BUY' ? 'comprar' : 'vender' }}
+            <strong>{{ cantidad() }}</strong> {{ v.symbol }}
+            @if (tipo() === 'LMT') { a {{ limite() | number: '1.2-2' }} }
+            @else { a mercado }.
+            Esta acción envía la orden al mercado real de la cuenta paper.
+          </p>
+          <button
+            type="button"
+            class="principal enviar"
+            [disabled]="enviando()"
+            (click)="enviar()"
+          >
+            {{ enviando() ? 'Enviando…' : 'Confirmar y enviar' }}
+          </button>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- ===================== Resultado del envío ===================== -->
+  @if (resultado(); as r) {
+    <div class="bloque resultado-envio" [attr.data-estado]="r.estado">
+      <header class="veredicto-cabecera">
+        <span class="rotulo">Resultado</span>
+        <span class="dictamen">{{ etiquetaEstado(r.estado) }}</span>
+      </header>
+
+      <dl class="desglose">
+        <div>
+          <dt class="rotulo">Orden</dt>
+          <dd class="cifra">{{ r.action }} {{ r.quantity }} {{ r.symbol }} · {{ r.order_type }}</dd>
+        </div>
+        @if (r.filled_quantity > 0) {
+          <div>
+            <dt class="rotulo">Ejecutado</dt>
+            <dd class="cifra">
+              {{ r.filled_quantity }}
+              @if (r.avg_fill_price !== null) { @ {{ r.avg_fill_price | number: '1.2-2' }} }
+            </dd>
+          </div>
+        }
+        @if (r.commission !== null) {
+          <div>
+            <dt class="rotulo">Comisión real</dt>
+            <dd class="cifra">{{ r.commission | number: '1.2-2' }} {{ r.commission_currency }}</dd>
+          </div>
+        }
+        <div>
+          <dt class="rotulo">Referencia IB</dt>
+          <dd class="cifra tenue">{{ r.order_id }}</dd>
+        </div>
+      </dl>
+
+      @if (r.broker_message) {
+        <p class="motivo baja">{{ r.broker_message }}</p>
+      }
+
+      <button type="button" class="principal" (click)="reiniciar()">Operar de nuevo</button>
+    </div>
+  }
+
+  <!-- Error transversal -->
+  @if (error(); as e) {
+    <p class="fallo baja">{{ e }}</p>
+  }
+</section>

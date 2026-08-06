@@ -1,0 +1,394 @@
+/**
+ * Estilos de la pantalla de operativa (T58, T59).
+ *
+ * Fiel al sistema: superficie acromatica, tinta sobre papel, y el color
+ * (--sube / --baja) reservado al veredicto y a las cifras que significan
+ * dinero. Los importes van en la clase .cifra (monoespaciada, tabular) que
+ * ya define styles.scss. Aqui no se declara ni una paleta nueva.
+ */
+
+.operar {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  max-width: 46rem;
+}
+
+.portada {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.titulo {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--tinta);
+}
+
+.glosa {
+  margin: 0;
+  max-width: 38rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--tinta-2);
+}
+
+/* ---------------- Bloques ---------------- */
+
+.bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--nube);
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+}
+
+/* ---------------- Buscador ---------------- */
+
+.buscador {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.entrada {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  background: var(--blanco);
+  color: var(--tinta);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+}
+
+.entrada:focus-visible {
+  outline: 2px solid var(--tinta);
+  outline-offset: 1px;
+  border-color: var(--tinta);
+}
+
+.resultados {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.resultado {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border: none;
+  border-bottom: 1px solid var(--linea);
+  background: var(--blanco);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.resultados li:last-child .resultado {
+  border-bottom: none;
+}
+
+.resultado:hover {
+  background: var(--realce);
+}
+
+.simbolo {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.nombre {
+  color: var(--tinta-2);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mercado {
+  color: var(--tinta-3);
+  white-space: nowrap;
+}
+
+/* ---------------- Instrumento elegido ---------------- */
+
+.elegido {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--linea);
+}
+
+.simbolo-grande {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-right: 0.6rem;
+}
+
+.enlace {
+  border: none;
+  background: none;
+  color: var(--tinta-3);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.enlace:hover {
+  color: var(--tinta);
+}
+
+.precio {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem 2rem;
+  margin: 0;
+}
+
+.precio dt {
+  margin-bottom: 0.25rem;
+}
+
+.precio dd {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* ---------------- Campos del formulario ---------------- */
+
+.campos {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.par {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.opcion {
+  flex: 1 1 0;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  background: var(--blanco);
+  color: var(--tinta-2);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.opcion:hover {
+  border-color: var(--tinta-3);
+}
+
+/* La opción activa se marca con tinta, no con color: elegir comprar o
+   vender no es todavía una cifra de resultado. */
+.opcion.activa {
+  border-color: var(--tinta);
+  background: var(--tinta);
+  color: var(--blanco);
+}
+
+/* ---------------- Botón principal ---------------- */
+
+.principal {
+  align-self: flex-start;
+  padding: 0.7rem 1.5rem;
+  border: 1px solid var(--tinta);
+  border-radius: 4px;
+  background: var(--tinta);
+  color: var(--blanco);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 140ms ease;
+}
+
+.principal:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.principal:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------------- Veredicto ---------------- */
+
+.veredicto {
+  border-width: 1px;
+}
+
+/* El borde izquierdo lleva el color del dictamen: es la única señal
+   cromática del panel, y significa dinero (si cabe o no cabe). */
+.veredicto.aceptada {
+  border-left: 3px solid var(--sube);
+}
+
+.veredicto.rechazada {
+  border-left: 3px solid var(--baja);
+}
+
+.veredicto-cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dictamen {
+  font-family: var(--font-num);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.motivos,
+.avisos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.motivo {
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.aviso-item {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--linea);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--tinta-2);
+}
+
+.desglose {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.85rem 2rem;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--linea);
+}
+
+.desglose dt {
+  margin-bottom: 0.25rem;
+}
+
+.desglose dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.fuerte {
+  font-weight: 600;
+}
+
+.tenue {
+  color: var(--tinta-3);
+  font-weight: 400;
+  font-size: 0.8125rem;
+}
+
+/* ---------------- Confirmación de envío ---------------- */
+
+.confirmar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--linea);
+}
+
+.nota {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--tinta-2);
+}
+
+/* El botón de enviar de verdad se distingue del de comprobar: mismo peso
+   visual pero recordando que esto sí toca el mercado. */
+.enviar {
+  border-color: var(--tinta);
+}
+
+/* ---------------- Resultado del envío ---------------- */
+
+.resultado-envio[data-estado='ejecutada'] {
+  border-left: 3px solid var(--sube);
+}
+
+.resultado-envio[data-estado='rechazada'],
+.resultado-envio[data-estado='no_enviada'] {
+  border-left: 3px solid var(--baja);
+}
+
+.resultado-envio[data-estado='activa'],
+.resultado-envio[data-estado='cancelada'] {
+  border-left: 3px solid var(--tinta-3);
+}
+
+/* ---------------- Error transversal ---------------- */
+
+.fallo {
+  margin: 0;
+  padding: 0.85rem 1.1rem;
+  border-left: 3px solid var(--baja);
+  background: color-mix(in srgb, var(--baja) 5%, var(--blanco));
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ---------------- Estrecho ---------------- */
+
+@media (max-width: 640px) {
+  .bloque {
+    padding: 1.1rem;
+  }
+
+  .resultado {
+    grid-template-columns: auto 1fr;
+  }
+
+  .mercado {
+    display: none;
+  }
+}
