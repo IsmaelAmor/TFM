@@ -304,3 +304,118 @@ def posiciones_efectivas(pesos: list[float]) -> float | None:
     if h is None or h == 0:
         return None
     return 1 / h
+
+
+# ---------------------------------------------------------------------
+# Valor en riesgo (VaR)
+# ---------------------------------------------------------------------
+#
+# Los dos VaR responden a la misma pregunta —cuánto puedo perder en un día
+# con una confianza dada— por dos caminos distintos, y se publican juntos
+# a propósito: al 95 % suelen parecerse y al 99 % el paramétrico sale MÁS
+# BAJO que el histórico. No es un error de cálculo. La normal no tiene
+# colas gordas y los mercados sí, así que la hipótesis de normalidad
+# infravalora justo los días que importan. Enseñar la divergencia y
+# explicarla vale más que elegir uno de los dos y callar el otro.
+#
+# Convención de signo: el VaR se devuelve como PÉRDIDA POSITIVA en tanto
+# por uno (0,032 = 3,2 % del valor de la cartera). Devolverlo negativo
+# obligaría a recordar el signo en cada sitio donde se consuma.
+
+
+def _z_de_confianza(confianza: float) -> float | None:
+    """Cuantil de la normal estándar para la cola izquierda.
+
+    Se saca de statistics.NormalDist en vez de fijar 1,645 y 2,326 a mano
+    porque así la función admite cualquier nivel de confianza sin tocar
+    código, y sin arrastrar scipy como dependencia por dos constantes.
+    """
+    if not 0.0 < confianza < 1.0:
+        return None
+    return statistics.NormalDist().inv_cdf(1.0 - confianza)
+
+
+def _perdida_desde_log(cuantil_log: float) -> float:
+    """Traduce un cuantil de rendimiento logarítmico a pérdida real.
+
+    Esta conversión es la hermana de D-21 y la misma trampa: la serie es
+    logarítmica, pero el dinero no. Un cuantil log de -0,05 NO es una
+    pérdida del 5 %, es del 4,88 %. Publicar el cuantil tal cual da un
+    número plausible y equivocado, que es la peor clase de error porque
+    nadie lo mira dos veces.
+
+    Se acota en cero: si el cuantil sale positivo (muestra sin apenas días
+    malos), la lectura correcta es que a ese nivel de confianza no se
+    espera pérdida, no una "pérdida negativa".
+    """
+    return max(0.0, -math.expm1(cuantil_log))
+
+
+def var_historico(rendimientos: list[float], confianza: float = 0.95) -> float | None:
+    """VaR histórico a un día: cuantil empírico de la muestra.
+
+    No supone ninguna distribución. Ordena los rendimientos observados y
+    lee directamente el peor de cada cien (al 99 %) o de cada veinte (al
+    95 %). Si en el año hubo un desplome del 9 %, ese desplome está en el
+    cálculo con su tamaño real, no aplanado por una campana de Gauss.
+
+    Se interpola linealmente entre las dos observaciones que rodean la
+    posición buscada, en vez de redondear a la más cercana: con 251 barras
+    la posición del 99 % cae en 2,5, y quedarse con la 2 o con la 3 cambia
+    el resultado por un artefacto de redondeo.
+
+    Exige al menos una observación en la cola (n >= 1/(1-confianza)): al
+    99 % son 100 días. Por debajo de eso el cuantil lo decidiría el peor
+    dato suelto de la muestra, y eso no es una estimación. Devuelve None,
+    no cero: un cero diría "no hay riesgo", que es lo contrario de "no hay
+    datos suficientes para medirlo".
+    """
+    if _z_de_confianza(confianza) is None:
+        return None
+
+    n = len(rendimientos)
+    if n < 2 or n < math.ceil(1.0 / (1.0 - confianza)):
+        return None
+
+    ordenados = sorted(rendimientos)
+    posicion = (1.0 - confianza) * (n - 1)
+    bajo = math.floor(posicion)
+    alto = math.ceil(posicion)
+
+    if bajo == alto:
+        cuantil = ordenados[bajo]
+    else:
+        peso = posicion - bajo
+        cuantil = ordenados[bajo] * (1.0 - peso) + ordenados[alto] * peso
+
+    return _perdida_desde_log(cuantil)
+
+
+def var_parametrico(rendimientos: list[float], confianza: float = 0.95) -> float | None:
+    """VaR paramétrico a un día suponiendo rendimientos normales.
+
+    Estima media y desviación típica muestrales (n-1, coherente con
+    volatilidad_anualizada) y lee el cuantil de la normal. La media se
+    incluye en vez de suponerla cero: a un día es casi irrelevante, pero
+    suponerla cero es una hipótesis gratuita cuando el dato está ahí.
+
+    Aquí NO se exige muestra en la cola, al contrario que en el histórico,
+    y la razón es la diferencia de fondo entre los dos métodos: este no
+    mira la cola, la extrapola de la campana. Puede dar un VaR al 99 % con
+    treinta observaciones, lo cual es a la vez su ventaja (funciona con
+    series cortas) y su peligro (contesta con la misma seguridad tenga o
+    no fundamento). Basta con que la desviación sea calculable.
+    """
+    z = _z_de_confianza(confianza)
+    if z is None or len(rendimientos) < 2:
+        return None
+
+    desviacion = statistics.stdev(rendimientos)
+    # Sin dispersion el VaR NO es cero: es la perdida cierta. Una serie
+    # que cae un 2 % todos los dias tiene riesgo aunque no tenga
+    # incertidumbre. Aqui habia un atajo que devolvia cero en ese caso,
+    # confundiendo 'no se mueve' con 'no pierde'. Lo destapo la prueba
+    # test_el_var_es_una_perdida_positiva.
+
+    media = statistics.fmean(rendimientos)
+    return _perdida_desde_log(media + z * desviacion)
