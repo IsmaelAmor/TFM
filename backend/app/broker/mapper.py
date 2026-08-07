@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from app.models.instrument import Instrument
 from app.models.quote import Quote
 from app.models.price_history import PriceHistory, PricePoint
+from app.models.execution import Execution, ExecutionHistory
 from app.config import settings
 
 # IB usa esta pseudodivisa para las filas ya consolidadas. No es una divisa
@@ -505,3 +506,113 @@ def bars_to_price_history(con_id: int, barras) -> PriceHistory:
         puntos.append(PricePoint(date=b.date, close=cierre))
 
     return PriceHistory(con_id=con_id, points=puntos)
+
+
+# ---------------------------------------------------------------------
+# Historico de ejecuciones (T38)
+# ---------------------------------------------------------------------
+
+# IB nombra los lados de una ejecucion distinto que los de una orden:
+# 'BOT'/'SLD' en Execution frente a 'BUY'/'SELL' en Order. Verificado el
+# 07/08/2026 con sondea_ejecuciones_hoy.py. Se traduce aqui para que el
+# historico y el formulario de ordenes hablen el mismo idioma; si no, la
+# misma operacion apareceria como 'BUY' al enviarla y como 'BOT' al
+# consultarla, y el frontend tendria que conocer las dos convenciones.
+_LADOS = {"BOT": "BUY", "SLD": "SELL"}
+
+
+def _lado_de_ejecucion(side: str) -> str:
+    """Traduce el lado de IB al nuestro, o lo devuelve tal cual si no lo conoce.
+
+    Devolver el original en vez de fallar es deliberado: un lado
+    desconocido (IB usa otros codigos en productos que no operamos) no
+    debe tumbar la consulta del historico entero.
+    """
+    return _LADOS.get(side, side)
+
+
+def _comision_de_fill(report) -> tuple[float | None, str]:
+    """Comision de una ejecucion, o None si todavia no ha llegado.
+
+    Es la misma leccion de T36, y aqui muerde igual: ib_async construye el
+    CommissionReport VACIO (commission=0.0, currency='') y lo rellena
+    despues, cuando dispara commissionReportEvent. Verificado el
+    07/08/2026: tres segundos despues de una ejecucion completada seguia
+    vacio.
+
+    Por eso la divisa, y no el importe, es lo que decide. Un report sin
+    divisa es un report sin rellenar, y tomar su 0.0 por bueno seria
+    afirmar que la operacion no costo nada. None significa "no se sabe",
+    que es distinto de cero y es lo unico honesto que se puede decir.
+    """
+    if report is None:
+        return None, ""
+    divisa = getattr(report, "currency", "") or ""
+    if not divisa:
+        return None, ""
+    return _to_float(getattr(report, "commission", 0.0)), divisa
+
+
+def fill_to_execution(fill) -> Execution:
+    """Convierte un Fill de ib_async en una Execution propia.
+
+    El Fill agrupa tres cosas: el contrato, la ejecucion y el informe de
+    comision. Se leen las tres aqui para que ningun objeto de ib_async
+    salga del paquete broker (RNF-08).
+
+    El sello de tiempo se deja EN UTC tal como llega. ib_async ya entrega
+    execution.time como datetime con tzinfo=UTC, asi que no hay parseo ni
+    conversion: localizar es cosa de quien pinta, no de quien registra.
+    Guardar hora local en un libro de operaciones es el error clasico que
+    se paga el dia del cambio de horario.
+    """
+    e = fill.execution
+    c = fill.contract
+
+    comision, divisa_comision = _comision_de_fill(
+        getattr(fill, "commissionReport", None)
+    )
+
+    cantidad = _to_float(e.shares)
+    precio = _to_float(e.price)
+
+    return Execution(
+        exec_id=e.execId,
+        order_id=e.orderId,
+        perm_id=e.permId,
+        symbol=c.symbol,
+        sec_type=getattr(c, "secType", ""),
+        currency=getattr(c, "currency", ""),
+        exchange=e.exchange or getattr(c, "exchange", ""),
+        action=_lado_de_ejecucion(e.side),
+        quantity=cantidad,
+        price=precio,
+        amount=cantidad * precio,
+        commission=comision,
+        commission_currency=divisa_comision,
+        time=e.time,
+        account_id=getattr(e, "acctNumber", ""),
+    )
+
+
+def fills_to_history(fills, account_id: str = "") -> ExecutionHistory:
+    """Convierte la respuesta de reqExecutions en el historico del dia.
+
+    Ordena de mas reciente a mas antigua, que es como se lee un historico:
+    lo ultimo que ha pasado arriba. Ordenar aqui y no en el frontend
+    permite que cualquier cliente reciba el mismo orden sin repetir la
+    regla.
+
+    La ventana se fija a 'current_day' porque es lo unico que el canal
+    entrega (ver app/models/execution.py). No se deduce de los datos: una
+    lista vacia no significa que la ventana sea otra.
+    """
+    ejecuciones = [fill_to_execution(f) for f in fills]
+    ejecuciones.sort(key=lambda x: x.time, reverse=True)
+
+    return ExecutionHistory(
+        account_id=account_id,
+        executions=ejecuciones,
+        window="current_day",
+        retrieved_at=datetime.now(timezone.utc),
+    )

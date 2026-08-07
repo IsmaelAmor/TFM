@@ -15,11 +15,12 @@ from app.broker.ib_client import get_ib
 from app.models.account import AccountSummary
 from app.models.portfolio import Portfolio
 import asyncio
-from ib_async import Contract, LimitOrder, MarketOrder
+from ib_async import Contract, ExecutionFilter, LimitOrder, MarketOrder
 from app.models.instrument import Instrument
 from app.models.quote import Quote
 from app.models.price_history import PriceHistory
 from app.models.order import BrokerPreview, OrderRequest, OrderResult
+from app.models.execution import ExecutionHistory
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -450,3 +451,43 @@ async def get_price_history(con_id: int) -> PriceHistory:
         barras = []
 
     return mapper.bars_to_price_history(con_id, barras)
+
+
+async def get_executions(account_id: str | None = None) -> ExecutionHistory:
+    """Ejecuciones del dia en curso, ya traducidas a modelo propio.
+
+    ALCANCE DECLARADO: reqExecutions solo sirve las ejecuciones desde
+    medianoche del servidor de IB. Medido el 07/08/2026 con tres sondas
+    (scripts/sondea_ejecuciones*.py): con filtros de 1, 3, 7, 30 y 90 dias
+    atras devuelve CERO, mientras que una compra hecha ese mismo dia
+    aparece al instante. Los filtros de fecha acotan DENTRO de la ventana,
+    no la amplian, asi que pasar un 'time' al filtro no serviria de nada y
+    solo daria la falsa impresion de cubrir mas.
+
+    La causa no es la API sino haber elegido IB Gateway: la ventana sube a
+    siete dias con el ajuste "Show trades for..." del Trade Log de TWS, y
+    el Gateway, al no tener interfaz grafica, no puede modificarlo.
+
+    Se usa reqExecutionsAsync y no ib.fills(): fills() lee la memoria del
+    cliente, o sea solo lo visto desde que este proceso se conecto, y se
+    vaciaria en cada reinicio de uvicorn. reqExecutions pregunta al
+    servidor de IB, que es la fuente.
+
+    El filtro va VACIO a proposito. ExecutionFilter() ya trae clientId=0,
+    que significa "todos los clientes": asi el historico incluye tambien
+    lo operado desde TWS a mano, y no solo lo enviado por esta aplicacion.
+    Un historico que ocultara las operaciones manuales mentiria por
+    omision.
+    """
+    cuenta = account_id or _default_account()
+    ib = get_ib()
+
+    fills = await asyncio.wait_for(
+        ib.reqExecutionsAsync(ExecutionFilter()),
+        timeout=settings.IB_TIMEOUT,
+    )
+
+    if cuenta:
+        fills = [f for f in fills if f.execution.acctNumber == cuenta]
+
+    return mapper.fills_to_history(fills, cuenta)
