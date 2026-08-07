@@ -17,6 +17,14 @@ from pydantic import BaseModel, Field
 class Position(BaseModel):
     """Una posición abierta, ya valorada por IB."""
 
+    con_id: int = Field(
+        0,
+        description="Identificador de contrato de IB; el unico identificador fiable",
+    )
+    con_id: int = Field(
+        0,
+        description="Identificador de contrato de IB; el unico identificador fiable",
+    )
     symbol: str = Field(..., description="Ticker, p. ej. AMZN")
     sec_type: str = Field(..., description="Tipo IB: STK cubre acciones y ETFs")
     currency: str = Field(..., description="Divisa en que cotiza el instrumento")

@@ -27,6 +27,7 @@ Sin dependencias numéricas externas: math y statistics del stdlib bastan.
 
 import math
 import statistics
+from datetime import date
 
 # Días hábiles de un año bursátil. Es la constante de anualización y no
 # depende del tamaño de la muestra: 251 barras se anualizan igual con 252.
@@ -419,3 +420,40 @@ def var_parametrico(rendimientos: list[float], confianza: float = 0.95) -> float
 
     media = statistics.fmean(rendimientos)
     return _perdida_desde_log(media + z * desviacion)
+
+
+# ---------------------------------------------------------------------
+# Alineacion de series (T47)
+# ---------------------------------------------------------------------
+
+
+def alinear_series(series: list[dict[date, float]]) -> list[list[float]]:
+    """Recorta N series de cierres a las fechas que TODAS comparten.
+
+    Las funciones de agregacion (covarianza, correlacion, volatilidad de
+    cartera) exigen series de igual longitud, y hasta aqui esa exigencia se
+    cumplia por casualidad: dos instrumentos del mismo mercado suelen tener
+    el mismo numero de sesiones. Pero no siempre. Una plaza tiene festivos
+    que otra no, un valor puede haber estado suspendido, y una accion que
+    salio a bolsa hace ocho meses tiene menos barras que un ano.
+
+    Emparejar por POSICION en la lista cuando las fechas no coinciden es un
+    error silencioso y grave: se calcularian correlaciones entre el martes
+    de un valor y el miercoles de otro. El numero sale, parece razonable y
+    esta mal. Por eso se cruza por fecha y se conserva solo la
+    interseccion.
+
+    Devuelve una lista por serie, todas de la misma longitud y en orden
+    cronologico. Si no hay ninguna fecha comun, devuelve listas vacias: es
+    la respuesta honesta, y la capa de arriba la traduce a "sin datos
+    suficientes" en vez de inventarse una metrica.
+    """
+    if not series:
+        return []
+
+    comunes = set(series[0])
+    for s in series[1:]:
+        comunes &= set(s)
+
+    fechas = sorted(comunes)
+    return [[s[f] for f in fechas] for s in series]

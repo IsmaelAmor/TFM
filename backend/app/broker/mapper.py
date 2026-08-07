@@ -93,6 +93,11 @@ def portfolio_item_to_position(
     latente = _to_float(item.unrealizedPNL)
 
     return Position(
+        # El identificador con el que se le puede volver a pedir algo a IB
+        # es el conId, no el ticker: el mismo simbolo son varias
+        # cotizaciones en plazas y divisas distintas. Sin este campo no se
+        # puede pedir el historico de precios de una posicion (T47).
+        con_id=int(getattr(contract, "conId", 0) or 0),
         symbol=contract.symbol,
         sec_type=contract.secType,
         currency=divisa,
