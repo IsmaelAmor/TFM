@@ -176,3 +176,113 @@ def test_volatilidad_cartera_una_sola_posicion_iguala_la_individual():
 
 def test_volatilidad_cartera_serie_corta_es_none():
     assert rs.volatilidad_cartera([1.0], [[0.01]]) is None
+
+
+# --- rendimiento_anualizado ----------------------------------------------
+
+
+def test_rendimiento_anualizado_es_la_media_por_252():
+    # Diez rendimientos de 0,001 -> media 0,001 -> 0,001 * 252 = 0,252.
+    # Se multiplica y no se compone porque los logaritmicos son aditivos.
+    assert rs.rendimiento_anualizado([0.001] * 10) == pytest.approx(0.252)
+
+
+def test_rendimiento_anualizado_serie_vacia_es_none():
+    # Sin ningun salto medido no hay rendimiento que anualizar. None y no
+    # cero: "sin datos" es informacion distinta de "no se ha movido".
+    assert rs.rendimiento_anualizado([]) is None
+
+
+# --- ratio_sharpe --------------------------------------------------------
+
+
+def test_sharpe_sin_tasa_es_rendimiento_entre_volatilidad():
+    # Valor esperado desde la definicion, no llamando a las funciones que
+    # se estan probando: (media * 252) / (stdev * sqrt(252)).
+    r = [0.004, -0.002, 0.010, -0.006, 0.003, 0.001]
+    esperado = (statistics.fmean(r) * 252) / (statistics.stdev(r) * math.sqrt(252))
+    assert rs.ratio_sharpe(r) == pytest.approx(esperado)
+
+
+def test_sharpe_convierte_la_tasa_a_continua():
+    # La prueba que caza el fallo silencioso: la tasa entra como simple
+    # (0,03 = 3 %) y debe restarse como ln(1,03) = 0,029559, no como 0,03.
+    # Restar la simple daria un numero plausible pero equivocado.
+    r = [0.004, -0.002, 0.010, -0.006, 0.003, 0.001]
+    numerador = statistics.fmean(r) * 252 - math.log(1.03)
+    esperado = numerador / (statistics.stdev(r) * math.sqrt(252))
+    assert rs.ratio_sharpe(r, 0.03) == pytest.approx(esperado)
+
+
+def test_sharpe_baja_al_exigir_tasa_libre_de_riesgo():
+    # El activo sin riesgo es el listo a batir: cuanto mas renta, menos
+    # merito tiene la cartera y menor es el Sharpe.
+    r = [0.004, -0.002, 0.010, -0.006, 0.003, 0.001]
+    assert rs.ratio_sharpe(r, 0.03) < rs.ratio_sharpe(r, 0.0)
+
+
+def test_sharpe_sube_si_sube_el_rendimiento_con_igual_riesgo():
+    # Sumar una constante a cada rendimiento desplaza la media y deja la
+    # desviacion tipica intacta: mismo riesgo, mas rentabilidad, mejor
+    # Sharpe. Es la propiedad que define la metrica.
+    base = [0.001, 0.020, -0.015, 0.008, -0.004]
+    mejor = [x + 0.005 for x in base]
+
+    assert statistics.stdev(mejor) == pytest.approx(statistics.stdev(base))
+    assert rs.ratio_sharpe(mejor) > rs.ratio_sharpe(base)
+
+
+def test_sharpe_volatilidad_cero_es_none():
+    # Rendimientos identicos -> desviacion cero -> division por cero. Un
+    # Sharpe infinito seria un dato falso, no un dato excelente.
+    assert rs.ratio_sharpe([0.001] * 10) is None
+
+
+def test_sharpe_serie_corta_es_none():
+    assert rs.ratio_sharpe([0.004]) is None
+
+
+def test_sharpe_rechaza_tasa_imposible():
+    # Una tasa de -100 % o menos rompe el logaritmo. Es un error de
+    # programacion, no un dato posible: se lanza en vez de devolver None.
+    with pytest.raises(ValueError):
+        rs.ratio_sharpe([0.004, -0.002, 0.010], -1.0)
+
+
+# --- indice_herfindahl y posiciones_efectivas ----------------------------
+
+
+def test_herfindahl_cartera_uniforme_es_uno_partido_n():
+    # Cinco posiciones al 20 %: 5 * 0,2^2 = 0,2 = 1/5. Es el minimo que
+    # puede alcanzar el indice con cinco posiciones.
+    assert rs.indice_herfindahl([0.2] * 5) == pytest.approx(0.2)
+
+
+def test_herfindahl_posicion_unica_es_uno():
+    # Todo el dinero en un valor: concentracion maxima.
+    assert rs.indice_herfindahl([1.0]) == pytest.approx(1.0)
+
+
+def test_herfindahl_cartera_vacia_es_none():
+    # La concentracion de nada no es cero: no esta definida.
+    assert rs.indice_herfindahl([]) is None
+
+
+def test_concentrar_sube_el_indice_y_baja_las_posiciones_efectivas():
+    # La aserción que demuestra que la metrica mide lo que dice medir.
+    # Misma cartera de cuatro valores, repartida y concentrada.
+    repartida = [0.25, 0.25, 0.25, 0.25]
+    concentrada = [0.70, 0.10, 0.10, 0.10]
+
+    assert rs.indice_herfindahl(concentrada) > rs.indice_herfindahl(repartida)
+    assert rs.posiciones_efectivas(concentrada) < rs.posiciones_efectivas(repartida)
+
+
+def test_posiciones_efectivas_de_cartera_uniforme_es_el_numero_de_posiciones():
+    # Ocho posiciones iguales equivalen exactamente a ocho posiciones.
+    # Es lo que hace la cifra legible sin saber que es un Herfindahl.
+    assert rs.posiciones_efectivas([0.125] * 8) == pytest.approx(8.0)
+
+
+def test_posiciones_efectivas_cartera_vacia_es_none():
+    assert rs.posiciones_efectivas([]) is None

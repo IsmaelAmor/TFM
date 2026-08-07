@@ -196,3 +196,111 @@ def volatilidad_suma_ponderada(
             return None
         total += w * v
     return total
+
+
+# --- Rendimiento ajustado por riesgo y concentración (T45) ---------------
+#
+# La volatilidad sola no basta para juzgar una cartera: dos carteras que se
+# mueven igual de bruscamente no son igual de buenas si una renta el doble.
+# Y una cartera puede tener volatilidad baja y aun así estar mal repartida,
+# con casi todo en dos valores. Las dos métricas de aquí abajo cubren esos
+# dos huecos: una relativiza el riesgo contra el rendimiento, la otra mide
+# el reparto con independencia de cómo se muevan los precios.
+
+
+def rendimiento_anualizado(rendimientos: list[float]) -> float | None:
+    """Rendimiento anualizado en términos CONTINUOS (logarítmicos).
+
+    Es la media de los rendimientos diarios multiplicada por 252. Al ser
+    logarítmicos se suman en el tiempo, así que anualizar es multiplicar y
+    no componer: esa aditividad es justo la razón por la que se eligieron
+    (D-19).
+
+    El número que devuelve NO es el "ha subido un X %" de una ficha
+    comercial: para leerlo así hay que pasarlo a rendimiento simple con
+    exp(r) - 1. Se deja en continuo porque es lo que consume el ratio de
+    Sharpe, y convertir de ida y vuelta solo añadiría redondeos.
+
+    Una serie vacía devuelve None: sin ningún salto medido no hay
+    rendimiento que anualizar.
+    """
+    if not rendimientos:
+        return None
+    return statistics.fmean(rendimientos) * DIAS_HABILES_ANO
+
+
+def ratio_sharpe(
+    rendimientos: list[float], tasa_libre_riesgo: float = 0.0
+) -> float | None:
+    """Rendimiento excedente por unidad de riesgo asumido.
+
+    Sharpe = (rendimiento anualizado - tasa libre de riesgo) / volatilidad
+    anualizada. Es la métrica que relativiza: un 20 % de volatilidad es
+    caro si renta un 5 % y barato si renta un 30 %.
+
+    La tasa se recibe como rendimiento SIMPLE anual (0,03 = 3 %) porque es
+    como se publica, y se convierte a continua con ln(1 + tasa) antes de
+    restarla. Mezclar un numerador logarítmico con una tasa simple no
+    rompe nada: devuelve un número plausible pero equivocado, que es peor
+    que un fallo ruidoso.
+
+    El valor por defecto de 0 NO es una estimación de la tasa real: es un
+    neutro deliberado para poder probar la función sin cablear un dato de
+    mercado. Con tasa 0 el cociente es rendimiento entre volatilidad, no
+    el Sharpe estricto. La tasa efectiva la pasa la capa que llama.
+
+    Devuelve None cuando la volatilidad es None (serie demasiado corta) o
+    cero (precio congelado): dividir por cero daría infinito, y un Sharpe
+    infinito es un dato falso, no un dato excelente.
+    """
+    if tasa_libre_riesgo <= -1:
+        raise ValueError("La tasa libre de riesgo no puede ser -100 % o menos")
+
+    r = rendimiento_anualizado(rendimientos)
+    vol = volatilidad_anualizada(rendimientos)
+    if r is None or vol is None or vol == 0:
+        return None
+    return (r - math.log(1 + tasa_libre_riesgo)) / vol
+
+
+def indice_herfindahl(pesos: list[float]) -> float | None:
+    """Índice de concentración de Herfindahl-Hirschman: la suma de w².
+
+    Mide cuánta cartera está en pocas manos. Vale 1 cuando todo el dinero
+    está en una sola posición y 1/n cuando el reparto entre n posiciones es
+    perfectamente uniforme, así que baja al diversificar.
+
+    Es el complemento de la matriz de correlaciones y mide algo distinto:
+    la matriz dice si las posiciones se mueven juntas, el índice dice si
+    hay demasiado peso en pocas. Una cartera puede estar bien descorrelada
+    y pésimamente repartida, y al revés.
+
+    Los pesos son fracciones del valor total de la cartera y deben sumar
+    aproximadamente 1; los calcula la capa que llama, igual que en
+    volatilidad_cartera. La aplicación veta los cortos, así que todos los
+    pesos son positivos.
+
+    Una cartera vacía devuelve None: la concentración de nada no es cero,
+    sencillamente no está definida.
+    """
+    if not pesos:
+        return None
+    return sum(w * w for w in pesos)
+
+
+def posiciones_efectivas(pesos: list[float]) -> float | None:
+    """Número equivalente de posiciones IGUALES: 1 / Herfindahl.
+
+    Traduce el índice a algo legible sin saber qué es un Herfindahl: una
+    cartera de ocho valores con 4,2 posiciones efectivas está, en cuanto a
+    concentración, tan expuesta como si solo tuviera cuatro a partes
+    iguales. Es la cifra que va al panel; el índice crudo se reserva para
+    el detalle.
+
+    Devuelve None si el índice no está definido o es cero, caso que solo se
+    da con la lista de pesos vacía.
+    """
+    h = indice_herfindahl(pesos)
+    if h is None or h == 0:
+        return None
+    return 1 / h
