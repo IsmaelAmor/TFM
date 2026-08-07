@@ -18,6 +18,7 @@ import asyncio
 from ib_async import Contract, LimitOrder, MarketOrder
 from app.models.instrument import Instrument
 from app.models.quote import Quote
+from app.models.price_history import PriceHistory
 from app.models.order import BrokerPreview, OrderRequest, OrderResult
 from app.config import settings
 
@@ -394,3 +395,58 @@ async def find_order(order_id: int) -> OrderResult | None:
         if trade.order.orderId == order_id:
             return mapper.trade_to_result(trade)
     return None
+
+async def get_price_history(con_id: int) -> PriceHistory:
+    """Serie de cierres diarios de 1 ano, para el modulo de riesgo.
+
+    Parametros fijados segun el sondeo del 07/08/2026
+    (scripts/sondea_historico.py), verificados contra DUN684545:
+
+      - durationStr '1 Y', barSizeSetting '1 day': ~251 barras, los dias
+        habiles de un ano. 252 es la constante de anualizacion, no el
+        recuento exacto.
+      - whatToShow 'ADJUSTED_LAST': corrige splits y dividendos. Sin
+        ajustar, cada fecha ex-dividendo mete una caida que no es
+        movimiento real de precio y un split mete un salto enorme; ambos
+        dispararian la volatilidad medida (D-18). Medido en AAPL: primer
+        cierre 220,03 sin ajustar frente a 219,16 ajustado.
+      - useRTH True: solo sesion regular, sin extended hours.
+      - formatDate 1: fecha como datetime.date, que es lo que el mapper
+        espera sin parsear.
+
+    Funciona con dato retrasado (marketDataType 3, lo unico que tiene la
+    cuenta paper) y con el mercado cerrado: el historico no depende de
+    suscripcion en tiempo real, verificado a las 10:30 con Wall Street aun
+    sin abrir. La ultima barra es la de la ultima sesion cerrada, que es lo
+    correcto: las metricas se calculan sobre sesiones completas.
+
+    El pacing medido fue holgado (~0,4 s por peticion, sin error 162), asi
+    que el modulo puede pedir el historico de las posiciones de la cartera
+    en serie sin espaciar. Si la cartera creciera mucho, el limitador iria
+    aqui, no en la capa de servicio.
+    """
+    ib = get_ib()
+    contrato = await _resolver_contrato(con_id)
+
+    # El wait_for es la misma red de seguridad que en get_quote: si IB no
+    # contesta, la peticion HTTP no puede quedarse colgada. El historico
+    # tarda mas que una cotizacion, asi que se le da un margen mayor que el
+    # timeout general.
+    try:
+        barras = await asyncio.wait_for(
+            ib.reqHistoricalDataAsync(
+                contrato,
+                endDateTime="",
+                durationStr="1 Y",
+                barSizeSetting="1 day",
+                whatToShow="ADJUSTED_LAST",
+                useRTH=True,
+                formatDate=1,
+            ),
+            timeout=settings.IB_TIMEOUT * 3,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Sin respuesta de historico para conId %s", con_id)
+        barras = []
+
+    return mapper.bars_to_price_history(con_id, barras)

@@ -26,6 +26,7 @@ import math
 from datetime import datetime, timezone
 from app.models.instrument import Instrument
 from app.models.quote import Quote
+from app.models.price_history import PriceHistory, PricePoint
 from app.config import settings
 
 # IB usa esta pseudodivisa para las filas ya consolidadas. No es una divisa
@@ -469,3 +470,38 @@ def trade_to_result(trade, error_code=None, error_message="") -> OrderResult:
         error_code=error_code,
         submitted_at=datetime.now(timezone.utc),
     )
+
+# ---------------------------------------------------------------------
+# Historico de precios (Fase 5)
+# ---------------------------------------------------------------------
+
+
+def bars_to_price_history(con_id: int, barras) -> PriceHistory:
+    """Convierte las BarData de reqHistoricalData en un PriceHistory propio.
+
+    De cada barra solo se conservan date y close: son los dos campos que el
+    modulo de riesgo consume. Verificado el 07/08/2026 con
+    scripts/sondea_historico.py que 'date' llega ya como datetime.date con
+    barSize '1 day', asi que no se parsea nada; se copia tal cual.
+
+    A diferencia de _precio y _importe, aqui no hay que cazar centinelas: el
+    cierre historico de una sesion cerrada es siempre un numero real. Aun
+    asi se descarta por seguridad cualquier barra cuyo close no sea > 0, que
+    solo podria pasar con datos corruptos: un cierre de cero o negativo
+    romperia el logaritmo de los rendimientos.
+
+    El orden de IB (mas antiguo primero) se respeta sin reordenar: los
+    rendimientos se calculan sobre pares consecutivos y dependen de el.
+    """
+    puntos = []
+    for b in barras or []:
+        cierre = getattr(b, "close", None)
+        try:
+            cierre = float(cierre)
+        except (TypeError, ValueError):
+            continue
+        if cierre <= 0:
+            continue
+        puntos.append(PricePoint(date=b.date, close=cierre))
+
+    return PriceHistory(con_id=con_id, points=puntos)
